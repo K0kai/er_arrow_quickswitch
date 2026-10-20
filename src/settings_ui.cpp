@@ -6,6 +6,7 @@
 #include "bindings.hpp"
 #include "wheel_bindings.hpp"
 #include "ui_cursor.hpp"
+#include "window_input.hpp"
 #include "../third_party/imgui/imgui.h"
 #include "../third_party/imgui/backends/imgui_impl_win32.h"
 #include "../third_party/imgui/backends/imgui_impl_dx12.h"
@@ -34,14 +35,18 @@ struct Context {
     ~Context(){ImGui::SetCurrentContext(previous);}
 };
 LRESULT CALLBACK messages(HWND hwnd,UINT message,WPARAM wParam,LPARAM lParam){
+    WNDPROC forward{};
     {
         std::lock_guard<std::recursive_mutex> guard(mutex);
+        forward=originalProc;
+        window_input::message(message,wParam,lParam);
+        if(message==WM_NCDESTROY){window=nullptr;originalProc=nullptr;ready=false;visible.store(false);}
         if(context && ready && visible.load()){
             Context current;
             if(message==WM_INPUT){
                 RAWINPUT raw{};UINT bytes=sizeof(raw);
                 if(GetRawInputData(reinterpret_cast<HRAWINPUT>(lParam),RID_INPUT,&raw,&bytes,sizeof(RAWINPUTHEADER))!=static_cast<UINT>(-1) && raw.header.dwType==RIM_TYPEMOUSE)
-                    mouse_input(raw.data.mouse);
+                    {window_input::raw_mouse(raw.data.mouse);mouse_input(raw.data.mouse);}
                 // DefWindowProc performs the required foreground RAWINPUT cleanup.
                 return DefWindowProcW(hwnd,message,wParam,lParam);
             }
@@ -53,7 +58,7 @@ LRESULT CALLBACK messages(HWND hwnd,UINT message,WPARAM wParam,LPARAM lParam){
                message==WM_SYSKEYDOWN || message==WM_SYSKEYUP || message==WM_CHAR)return 0;
         }
     }
-    return CallWindowProcW(originalProc,hwnd,message,wParam,lParam);
+    return forward?CallWindowProcW(forward,hwnd,message,wParam,lParam):DefWindowProcW(hwnd,message,wParam,lParam);
 }
 void load(){
     editing=theme::load(config);const auto file=config.wstring();
@@ -187,6 +192,33 @@ void panel(){
     ImGui::End();if(!keep)visible.store(false);
 }
 }
+bool attach_input_window(HWND hwnd){
+    std::lock_guard<std::recursive_mutex> guard(mutex);
+    DWORD pid{};GetWindowThreadProcessId(hwnd,&pid);
+    if(!hwnd || pid!=GetCurrentProcessId() || !IsWindow(hwnd))return false;
+    if(window==hwnd && originalProc)return true;
+    if(window && IsWindow(window)){
+        // Do not tear down a different mod's subclass chain.
+        if(reinterpret_cast<WNDPROC>(GetWindowLongPtrW(window,GWLP_WNDPROC))!=messages)return false;
+        SetWindowLongPtrW(window,GWLP_WNDPROC,reinterpret_cast<LONG_PTR>(originalProc));
+    }
+    SetLastError(0);
+    const auto previous=reinterpret_cast<WNDPROC>(SetWindowLongPtrW(hwnd,GWLP_WNDPROC,reinterpret_cast<LONG_PTR>(messages)));
+    if(!previous){window=nullptr;originalProc=nullptr;window_input::focus(false);return false;}
+    window=hwnd;originalProc=previous;window_input::focus(GetForegroundWindow()==hwnd);
+    return true;
+}
+void ensure_input_window(){
+    std::lock_guard<std::recursive_mutex> guard(mutex);
+    if(window && IsWindow(window) && originalProc)return;
+    HWND candidate{};
+    EnumWindows([](HWND hwnd,LPARAM value)->BOOL{
+        DWORD pid{};GetWindowThreadProcessId(hwnd,&pid);
+        if(pid!=GetCurrentProcessId() || !IsWindowVisible(hwnd) || GetWindow(hwnd,GW_OWNER))return TRUE;
+        *reinterpret_cast<HWND*>(value)=hwnd;return FALSE;
+    },reinterpret_cast<LPARAM>(&candidate));
+    if(candidate)attach_input_window(candidate);
+}
 void set_config(const std::filesystem::path& path){std::lock_guard<std::recursive_mutex> guard(mutex);config=path;}
 bool is_open(){return visible.load();}
 void toggle(){if(panelEnabled.load())visible.store(!visible.load());}
@@ -223,6 +255,7 @@ void synchronize(){
 bool install(HWND hwnd,ID3D12Device* device,ID3D12CommandQueue* queue,unsigned frames,DXGI_FORMAT format,ID3D12DescriptorHeap* heap){
     std::lock_guard<std::recursive_mutex> guard(mutex);
     if(ready)return true;
+    if(!attach_input_window(hwnd))return false;
     const auto previous=ImGui::GetCurrentContext();context=ImGui::CreateContext();ImGui::SetCurrentContext(context);
     auto& io=ImGui::GetIO();io.IniFilename=nullptr;io.LogFilename=nullptr;io.ConfigFlags|=ImGuiConfigFlags_NavEnableKeyboard;
     io.ConfigWindowsMoveFromTitleBarOnly=true;
@@ -251,12 +284,10 @@ bool install(HWND hwnd,ID3D12Device* device,ID3D12CommandQueue* queue,unsigned f
     if(!ImGui_ImplWin32_Init(hwnd)){ImGui::DestroyContext(context);context=nullptr;ImGui::SetCurrentContext(previous);return false;}
     ImGui_ImplWin32_UseExternalMousePosition(true);
     if(!ImGui_ImplDX12_Init(&info)){ImGui_ImplWin32_Shutdown();ImGui::DestroyContext(context);context=nullptr;ImGui::SetCurrentContext(previous);return false;}
-    window=hwnd;SetLastError(0);
     RECT area{};GetClientRect(hwnd,&area);cursor.move(0,0,static_cast<float>(area.right),static_cast<float>(area.bottom));
     io.AddMousePosEvent(cursor.x,cursor.y);
-    originalProc=reinterpret_cast<WNDPROC>(SetWindowLongPtrW(hwnd,GWLP_WNDPROC,reinterpret_cast<LONG_PTR>(messages)));
-    ready=originalProc!=nullptr;
-    if(!ready){ImGui_ImplDX12_Shutdown();ImGui_ImplWin32_Shutdown();ImGui::DestroyContext(context);context=nullptr;window=nullptr;}
+    ready=true;
+    if(!ready){ImGui_ImplDX12_Shutdown();ImGui_ImplWin32_Shutdown();ImGui::DestroyContext(context);context=nullptr;}
     ImGui::SetCurrentContext(previous);return ready;
 }
 void render(ID3D12GraphicsCommandList* commands){
@@ -268,9 +299,7 @@ void render(ID3D12GraphicsCommandList* commands){
 void shutdown(){
     std::lock_guard<std::recursive_mutex> guard(mutex);if(!context)return;
     Context current;
-    if(window && originalProc && reinterpret_cast<WNDPROC>(GetWindowLongPtrW(window,GWLP_WNDPROC))==messages)
-        SetWindowLongPtrW(window,GWLP_WNDPROC,reinterpret_cast<LONG_PTR>(originalProc));
     ImGui_ImplDX12_Shutdown();ImGui_ImplWin32_Shutdown();ImGui::DestroyContext(context);
-    current.previous=nullptr;context=nullptr;window=nullptr;originalProc=nullptr;ready=false;
+    current.previous=nullptr;context=nullptr;ready=false;
 }
 }

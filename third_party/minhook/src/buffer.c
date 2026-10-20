@@ -29,58 +29,29 @@
 #include <windows.h>
 #include "buffer.h"
 
-// Size of each memory block. (= page size of VirtualAlloc)
+// Local hardening: one page per trampoline, RW during creation then RX.
+// Allocation metadata stays on the non-executable process heap.
 #define MEMORY_BLOCK_SIZE 0x1000
-
-// Max range for seeking a memory block. (= 1024MB)
 #define MAX_MEMORY_RANGE 0x40000000
-
-// Memory protection flags to check the executable address.
 #define PAGE_EXECUTE_FLAGS \
     (PAGE_EXECUTE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY)
 
-// Memory slot.
-typedef struct _MEMORY_SLOT
+typedef struct _BUFFER_NODE
 {
-    union
-    {
-        struct _MEMORY_SLOT *pNext;
-        UINT8 buffer[MEMORY_SLOT_SIZE];
-    };
-} MEMORY_SLOT, *PMEMORY_SLOT;
+    struct _BUFFER_NODE *next;
+    LPVOID address;
+} BUFFER_NODE;
+static BUFFER_NODE *g_buffers;
 
-// Memory block info. Placed at the head of each block.
-typedef struct _MEMORY_BLOCK
-{
-    struct _MEMORY_BLOCK *pNext;
-    PMEMORY_SLOT pFree;         // First element of the free slot list.
-    UINT usedCount;
-} MEMORY_BLOCK, *PMEMORY_BLOCK;
-
-//-------------------------------------------------------------------------
-// Global Variables:
-//-------------------------------------------------------------------------
-
-// First element of the memory block list.
-PMEMORY_BLOCK g_pMemoryBlocks;
-
-//-------------------------------------------------------------------------
-VOID InitializeBuffer(VOID)
-{
-    // Nothing to do for now.
-}
-
-//-------------------------------------------------------------------------
+VOID InitializeBuffer(VOID) {}
 VOID UninitializeBuffer(VOID)
 {
-    PMEMORY_BLOCK pBlock = g_pMemoryBlocks;
-    g_pMemoryBlocks = NULL;
-
-    while (pBlock)
+    while (g_buffers)
     {
-        PMEMORY_BLOCK pNext = pBlock->pNext;
-        VirtualFree(pBlock, 0, MEM_RELEASE);
-        pBlock = pNext;
+        BUFFER_NODE *node = g_buffers;
+        g_buffers = node->next;
+        VirtualFree(node->address, 0, MEM_RELEASE);
+        HeapFree(GetProcessHeap(), 0, node);
     }
 }
 
@@ -147,166 +118,92 @@ static LPVOID FindNextFreeRegion(LPVOID pAddress, LPVOID pMaxAddr, DWORD dwAlloc
 }
 #endif
 
-//-------------------------------------------------------------------------
-static PMEMORY_BLOCK GetMemoryBlock(LPVOID pOrigin)
+static LPVOID AllocatePage(LPVOID origin)
 {
-    PMEMORY_BLOCK pBlock;
+    LPVOID address = NULL;
 #if defined(_M_X64) || defined(__x86_64__)
-    ULONG_PTR minAddr;
-    ULONG_PTR maxAddr;
-
     SYSTEM_INFO si;
+    ULONG_PTR minAddr, maxAddr;
+    LPVOID candidate;
     GetSystemInfo(&si);
     minAddr = (ULONG_PTR)si.lpMinimumApplicationAddress;
     maxAddr = (ULONG_PTR)si.lpMaximumApplicationAddress;
-
-    // pOrigin ± 512MB
-    if ((ULONG_PTR)pOrigin > MAX_MEMORY_RANGE && minAddr < (ULONG_PTR)pOrigin - MAX_MEMORY_RANGE)
-        minAddr = (ULONG_PTR)pOrigin - MAX_MEMORY_RANGE;
-
-    if (maxAddr > (ULONG_PTR)pOrigin + MAX_MEMORY_RANGE)
-        maxAddr = (ULONG_PTR)pOrigin + MAX_MEMORY_RANGE;
-
-    // Make room for MEMORY_BLOCK_SIZE bytes.
+    if ((ULONG_PTR)origin > MAX_MEMORY_RANGE && minAddr < (ULONG_PTR)origin - MAX_MEMORY_RANGE)
+        minAddr = (ULONG_PTR)origin - MAX_MEMORY_RANGE;
+    if (maxAddr > (ULONG_PTR)origin + MAX_MEMORY_RANGE)
+        maxAddr = (ULONG_PTR)origin + MAX_MEMORY_RANGE;
     maxAddr -= MEMORY_BLOCK_SIZE - 1;
-#endif
 
-    // Look the registered blocks for a reachable one.
-    for (pBlock = g_pMemoryBlocks; pBlock != NULL; pBlock = pBlock->pNext)
+    candidate = origin;
+    while ((ULONG_PTR)candidate >= minAddr)
     {
-#if defined(_M_X64) || defined(__x86_64__)
-        // Ignore the blocks too far.
-        if ((ULONG_PTR)pBlock < minAddr || (ULONG_PTR)pBlock >= maxAddr)
-            continue;
-#endif
-        // The block has at least one unused slot.
-        if (pBlock->pFree != NULL)
-            return pBlock;
+        candidate = FindPrevFreeRegion(candidate, (LPVOID)minAddr, si.dwAllocationGranularity);
+        if (!candidate) break;
+        address = VirtualAlloc(candidate, MEMORY_BLOCK_SIZE, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+        if (address) break;
     }
-
-#if defined(_M_X64) || defined(__x86_64__)
-    // Alloc a new block above if not found.
+    if (!address)
     {
-        LPVOID pAlloc = pOrigin;
-        while ((ULONG_PTR)pAlloc >= minAddr)
+        candidate = origin;
+        while ((ULONG_PTR)candidate <= maxAddr)
         {
-            pAlloc = FindPrevFreeRegion(pAlloc, (LPVOID)minAddr, si.dwAllocationGranularity);
-            if (pAlloc == NULL)
-                break;
-
-            pBlock = (PMEMORY_BLOCK)VirtualAlloc(
-                pAlloc, MEMORY_BLOCK_SIZE, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
-            if (pBlock != NULL)
-                break;
-        }
-    }
-
-    // Alloc a new block below if not found.
-    if (pBlock == NULL)
-    {
-        LPVOID pAlloc = pOrigin;
-        while ((ULONG_PTR)pAlloc <= maxAddr)
-        {
-            pAlloc = FindNextFreeRegion(pAlloc, (LPVOID)maxAddr, si.dwAllocationGranularity);
-            if (pAlloc == NULL)
-                break;
-
-            pBlock = (PMEMORY_BLOCK)VirtualAlloc(
-                pAlloc, MEMORY_BLOCK_SIZE, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
-            if (pBlock != NULL)
-                break;
+            candidate = FindNextFreeRegion(candidate, (LPVOID)maxAddr, si.dwAllocationGranularity);
+            if (!candidate) break;
+            address = VirtualAlloc(candidate, MEMORY_BLOCK_SIZE, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+            if (address) break;
         }
     }
 #else
-    // In x86 mode, a memory block can be placed anywhere.
-    pBlock = (PMEMORY_BLOCK)VirtualAlloc(
-        NULL, MEMORY_BLOCK_SIZE, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+    address = VirtualAlloc(NULL, MEMORY_BLOCK_SIZE, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
 #endif
-
-    if (pBlock != NULL)
-    {
-        // Build a linked list of all the slots.
-        PMEMORY_SLOT pSlot = (PMEMORY_SLOT)pBlock + 1;
-        pBlock->pFree = NULL;
-        pBlock->usedCount = 0;
-        do
-        {
-            pSlot->pNext = pBlock->pFree;
-            pBlock->pFree = pSlot;
-            pSlot++;
-        } while ((ULONG_PTR)pSlot - (ULONG_PTR)pBlock <= MEMORY_BLOCK_SIZE - MEMORY_SLOT_SIZE);
-
-        pBlock->pNext = g_pMemoryBlocks;
-        g_pMemoryBlocks = pBlock;
-    }
-
-    return pBlock;
+    return address;
 }
 
-//-------------------------------------------------------------------------
-LPVOID AllocateBuffer(LPVOID pOrigin)
+LPVOID AllocateBuffer(LPVOID origin)
 {
-    PMEMORY_SLOT  pSlot;
-    PMEMORY_BLOCK pBlock = GetMemoryBlock(pOrigin);
-    if (pBlock == NULL)
+    BUFFER_NODE *node;
+    LPVOID address = AllocatePage(origin);
+    if (!address) return NULL;
+    node = (BUFFER_NODE *)HeapAlloc(GetProcessHeap(), 0, sizeof(*node));
+    if (!node)
+    {
+        VirtualFree(address, 0, MEM_RELEASE);
         return NULL;
-
-    // Remove an unused slot from the list.
-    pSlot = pBlock->pFree;
-    pBlock->pFree = pSlot->pNext;
-    pBlock->usedCount++;
-#ifdef _DEBUG
-    // Fill the slot with INT3 for debugging.
-    memset(pSlot, 0xCC, sizeof(MEMORY_SLOT));
-#endif
-    return pSlot;
+    }
+    node->address = address;
+    node->next = g_buffers;
+    g_buffers = node;
+    return address;
 }
 
-//-------------------------------------------------------------------------
-VOID FreeBuffer(LPVOID pBuffer)
+BOOL SealBuffer(LPVOID buffer)
 {
-    PMEMORY_BLOCK pBlock = g_pMemoryBlocks;
-    PMEMORY_BLOCK pPrev = NULL;
-    ULONG_PTR pTargetBlock = ((ULONG_PTR)pBuffer / MEMORY_BLOCK_SIZE) * MEMORY_BLOCK_SIZE;
+    DWORD previous;
+    if (!VirtualProtect(buffer, MEMORY_BLOCK_SIZE, PAGE_EXECUTE_READ, &previous))
+        return FALSE;
+    return FlushInstructionCache(GetCurrentProcess(), buffer, MEMORY_BLOCK_SIZE);
+}
 
-    while (pBlock != NULL)
+VOID FreeBuffer(LPVOID buffer)
+{
+    BUFFER_NODE **link = &g_buffers;
+    while (*link)
     {
-        if ((ULONG_PTR)pBlock == pTargetBlock)
+        BUFFER_NODE *node = *link;
+        if (node->address == buffer)
         {
-            PMEMORY_SLOT pSlot = (PMEMORY_SLOT)pBuffer;
-#ifdef _DEBUG
-            // Clear the released slot for debugging.
-            memset(pSlot, 0x00, sizeof(MEMORY_SLOT));
-#endif
-            // Restore the released slot to the list.
-            pSlot->pNext = pBlock->pFree;
-            pBlock->pFree = pSlot;
-            pBlock->usedCount--;
-
-            // Free if unused.
-            if (pBlock->usedCount == 0)
-            {
-                if (pPrev)
-                    pPrev->pNext = pBlock->pNext;
-                else
-                    g_pMemoryBlocks = pBlock->pNext;
-
-                VirtualFree(pBlock, 0, MEM_RELEASE);
-            }
-
-            break;
+            *link = node->next;
+            VirtualFree(node->address, 0, MEM_RELEASE);
+            HeapFree(GetProcessHeap(), 0, node);
+            return;
         }
-
-        pPrev = pBlock;
-        pBlock = pBlock->pNext;
+        link = &node->next;
     }
 }
 
-//-------------------------------------------------------------------------
-BOOL IsExecutableAddress(LPVOID pAddress)
+BOOL IsExecutableAddress(LPVOID address)
 {
-    MEMORY_BASIC_INFORMATION mi;
-    VirtualQuery(pAddress, &mi, sizeof(mi));
-
-    return (mi.State == MEM_COMMIT && (mi.Protect & PAGE_EXECUTE_FLAGS));
+    MEMORY_BASIC_INFORMATION info;
+    if (!VirtualQuery(address, &info, sizeof(info))) return FALSE;
+    return info.State == MEM_COMMIT && (info.Protect & PAGE_EXECUTE_FLAGS);
 }

@@ -593,11 +593,13 @@ MH_STATUS WINAPI MH_CreateHook(LPVOID pTarget, LPVOID pDetour, LPVOID *ppOrigina
                 if (pBuffer != NULL)
                 {
                     TRAMPOLINE ct;
+                    BOOL trampolineCreated;
 
                     ct.pTarget     = pTarget;
                     ct.pDetour     = pDetour;
                     ct.pTrampoline = pBuffer;
-                    if (CreateTrampolineFunction(&ct))
+                    trampolineCreated = CreateTrampolineFunction(&ct);
+                    if (trampolineCreated && SealBuffer(pBuffer))
                     {
                         PHOOK_ENTRY pHook = AddHookEntry();
                         if (pHook != NULL)
@@ -640,7 +642,7 @@ MH_STATUS WINAPI MH_CreateHook(LPVOID pTarget, LPVOID pDetour, LPVOID *ppOrigina
                     }
                     else
                     {
-                        status = MH_ERROR_UNSUPPORTED_FUNCTION;
+                        status = trampolineCreated ? MH_ERROR_MEMORY_PROTECT : MH_ERROR_UNSUPPORTED_FUNCTION;
                     }
 
                     if (status != MH_OK)

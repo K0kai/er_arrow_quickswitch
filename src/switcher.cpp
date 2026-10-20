@@ -10,6 +10,7 @@
 #include "theme_config.hpp"
 #include "item_icons.hpp"
 #include "settings_ui.hpp"
+#include "window_input.hpp"
 #include <MinHook.h>
 #include <atomic>
 #include <bit>
@@ -162,6 +163,10 @@ bool load_config() {
 
 UINT WINAPI hooked_raw_input(HRAWINPUT input,UINT command,LPVOID data,PUINT size,UINT headerSize) {
     const auto result=originalRawInputData(input,command,data,size,headerSize);
+    if(command==RID_INPUT && data && size && result!=static_cast<UINT>(-1) && result>=sizeof(RAWINPUT)){
+        const auto* raw=static_cast<const RAWINPUT*>(data);
+        if(raw->header.dwType==RIM_TYPEMOUSE)window_input::raw_mouse(raw->data.mouse);
+    }
     if(settings_ui::is_open() && command==RID_INPUT && data && size && result!=static_cast<UINT>(-1) && result>=sizeof(RAWINPUT)){
         auto* raw=static_cast<RAWINPUT*>(data);
         if(raw->header.dwType==RIM_TYPEMOUSE){settings_ui::mouse_input(raw->data.mouse);raw->data.mouse={};}
@@ -308,7 +313,6 @@ bool read_effects(std::uintptr_t weaponParam,std::uintptr_t effectParam,std::uin
     return true;
 }
 
-bool key_down(int key) { return key>0 && (GetAsyncKeyState(key)&0x8000)!=0; }
 void play_wheel_sound(bool hover) {
     (void)hover;
     if(!config.soundEnabled || !equipmentSound || !equipmentSoundVtable)return;
@@ -345,6 +349,8 @@ void update(void* hud) {
     static std::uint64_t pendingSince{};
     if (first) { first=false; log("Equipment HUD hook is executing."); }
     const auto now=GetTickCount64();
+    static std::uint64_t lastInputCheck=0;
+    if(now-lastInputCheck>=500){lastInputCheck=now;settings_ui::ensure_input_window();}
     // Apply safe customization changes between wheel interactions. The renderer
     // receives a snapshot and consumes it on its own thread between frames.
     static std::uint64_t lastThemeCheck=0;
@@ -386,7 +392,9 @@ void update(void* hud) {
     }
 
     DWORD pid{}; GetWindowThreadProcessId(GetForegroundWindow(),&pid);
-    const bool focused=pid==GetCurrentProcessId();
+    const auto inputState=window_input::snapshot();
+    const auto key_down=[&](int key){return inputState.down(key);};
+    const bool focused=pid==GetCurrentProcessId() && inputState.focused;
     const unsigned modifiers=(key_down(VK_CONTROL)?input::ctrl:0u) | (key_down(VK_SHIFT)?input::shift:0u) |
         (key_down(VK_MENU)?input::alt:0u) | ((key_down(VK_LWIN)||key_down(VK_RWIN))?input::win:0u);
     const bool diagPressed=diagnosticEdge.sample(key_down(config.diagnostic.key),input::matches(config.diagnostic,modifiers),focused);
@@ -561,7 +569,7 @@ void hooked_hud(void* hud,float arg2,void* arg3) {
 DWORD WINAPI initialize(void*) {
     wchar_t path[32768]{}; GetModuleFileNameW(module,path,32768);
     folder=std::filesystem::path(path).parent_path();
-    log("ArrowQuickSwitch 0.6.1: paged ammo wheels and secondary-slot handle compatibility.");
+    log("ArrowQuickSwitch 0.6.2: paged ammo wheels and secondary-slot handle compatibility.");
     if (!supported_version()) { log("Disabled: unsupported executable version (requires file 2.7.1.0 / game 1.17.1)."); return 0; }
     wchar_t executable[32768]{};
     if(GetModuleFileNameW(nullptr,executable,32768))item_icons::initialize(std::filesystem::path(executable).parent_path(),log);
@@ -569,6 +577,7 @@ DWORD WINAPI initialize(void*) {
         log("Could not create or update ArrowQuickSwitch.ini; using available settings and built-in defaults.");
     if (!load_config()) { log("Disabled: invalid or conflicting controls/timing configuration."); return 0; }
     settings_ui::set_config(folder/L"ArrowQuickSwitch.ini");
+    settings_ui::ensure_input_window();
     settings_ui::set_enabled(config.settingsKey.key!=0);
     {
         constexpr const wchar_t* libraries[]={L"xinput1_4.dll",L"xinput9_1_0.dll",L"xinput1_3.dll"};
@@ -600,12 +609,30 @@ DWORD WINAPI initialize(void*) {
     if (status!=MH_OK && status!=MH_ERROR_ALREADY_INITIALIZED) { log("Disabled: hook initialization failed (%d).",status); return 0; }
     status=MH_CreateHook(reinterpret_cast<void*>(addresses.hud),reinterpret_cast<void*>(&hooked_hud),reinterpret_cast<void**>(&originalHud));
     if (status!=MH_OK) { log("Disabled: cannot create equipment HUD hook (%d).",status); return 0; }
-    status=MH_EnableHook(reinterpret_cast<void*>(addresses.hud));
-    if (status!=MH_OK) { MH_RemoveHook(reinterpret_cast<void*>(addresses.hud)); log("Disabled: cannot enable equipment HUD hook (%d).",status); return 0; }
+    // Queue the two core hooks so MinHook suspends/resumes threads once.
+    const auto hudTarget=reinterpret_cast<void*>(addresses.hud);
+    status=MH_QueueEnableHook(hudTarget);
+    if(status!=MH_OK){MH_RemoveHook(hudTarget);log("Disabled: cannot queue HUD hook (%d).",status);return 0;}
+    void* rawTarget=nullptr;
     if(auto* rawProc=GetProcAddress(GetModuleHandleW(L"user32.dll"),"GetRawInputData")){
-        if(MH_CreateHook(reinterpret_cast<void*>(rawProc),reinterpret_cast<void*>(&hooked_raw_input),reinterpret_cast<void**>(&originalRawInputData))==MH_OK){
-            if(MH_EnableHook(reinterpret_cast<void*>(rawProc))!=MH_OK){MH_RemoveHook(reinterpret_cast<void*>(rawProc));originalRawInputData=nullptr;}
-        }
+        const auto target=reinterpret_cast<void*>(rawProc);
+        const auto created=MH_CreateHook(target,reinterpret_cast<void*>(&hooked_raw_input),reinterpret_cast<void**>(&originalRawInputData));
+        if(created==MH_OK){
+            if(MH_QueueEnableHook(target)==MH_OK)rawTarget=target;
+            else{MH_RemoveHook(target);originalRawInputData=nullptr;log("Raw mouse hook unavailable: queue failed.");}
+        }else log("Raw mouse hook unavailable: creation failed (%d).",created);
+    }
+    status=MH_ApplyQueued();
+    if(status!=MH_OK){
+        // Applying a batch can fail after some patches were installed. Disable
+        // them together, but retain buffers: an in-flight detour can still be
+        // about to call its original trampoline even after its target is restored.
+        MH_QueueDisableHook(hudTarget);
+        if(rawTarget)MH_QueueDisableHook(rawTarget);
+        const auto rollback=MH_ApplyQueued();
+        enabled.store(false);
+        log("Disabled: core hook activation failed (%d), rollback=%d. Trampolines retained for callback safety.",status,rollback);
+        return 0;
     }
     log("Ready: Arrow1WheelKey=%ls Arrow2WheelKey=%ls Bolt1WheelKey=%ls Bolt2WheelKey=%ls DiagnosticKey=%ls. Mouse release delay=%ums. Raw mouse=%u.",
         config.wheelText.c_str(),config.otherWheelTexts[0].c_str(),

@@ -24,6 +24,19 @@ inline unsigned big32(View bytes,std::size_t at) {
     const auto v=value<std::uint32_t>(bytes,at);
     return (v>>24)|((v>>8)&0xFF00)|((v<<8)&0xFF0000)|(v<<24);
 }
+inline constexpr std::size_t maxIconAssetBytes=512ull*1024*1024;
+enum class DcxCodec {deflate,kraken};
+struct DcxPayload {DcxCodec codec{};unsigned decoded{},compressed{};};
+inline bool dcx_payload(View bytes,DcxPayload& result){
+    if(!magic(bytes,0,"DCX\0") || bytes.size()<76)return false;
+    const auto decoded=big32(bytes,28),compressed=big32(bytes,32);
+    if(!decoded || decoded>maxIconAssetBytes || !compressed || compressed>bytes.size()-76)return false;
+    DcxCodec codec;
+    if(magic(bytes,40,"DFLT"))codec=DcxCodec::deflate;
+    else if(magic(bytes,40,"KRAK"))codec=DcxCodec::kraken;
+    else return false;
+    result={codec,decoded,compressed};return true;
+}
 inline std::string basename(std::string_view path) {
     const auto slash=path.find_last_of("/\\");if(slash!=path.npos)path.remove_prefix(slash+1);
     const auto dot=path.find_last_of('.');if(dot!=path.npos)path=path.substr(0,dot);
@@ -79,12 +92,14 @@ inline View tpf_texture(View bytes,const std::string& wanted) {
         const auto offset=value<std::uint32_t>(bytes,entry),size=value<std::uint32_t>(bytes,entry+4);
         const auto nameOffset=value<std::uint32_t>(bytes,entry+12);
         if(offset>bytes.size()||size>bytes.size()-offset||nameOffset>=bytes.size())continue;
-        std::string name;const unsigned stride=bytes[14]==1?2:1;
+        std::string name;bool terminated=false,valid=true;const unsigned stride=bytes[14]==1?2:1;
         for(std::size_t p=nameOffset;p<bytes.size() && name.size()<256;p+=stride){
-            if(bytes[p]==0 && (stride==1 || (p+1<bytes.size() && bytes[p+1]==0)))break;
+            // Atlas identifiers are ASCII, including in the UTF-16 variant.
+            if(stride==2 && (p+1>=bytes.size() || bytes[p+1]!=0)){valid=false;break;}
+            if(bytes[p]==0){terminated=true;break;}
             name.push_back(static_cast<char>(bytes[p]));
         }
-        if(basename(name)==wanted)return bytes.subspan(offset,size);
+        if(valid && terminated && basename(name)==wanted)return bytes.subspan(offset,size);
     }
     return {};
 }

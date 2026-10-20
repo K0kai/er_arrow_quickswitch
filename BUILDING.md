@@ -52,11 +52,12 @@ compiles the included dependencies and mod source, and runs the automated tests.
 A successful run exits with code 0 and reports the output DLL. Any failed build
 or test stops the script with a nonzero exit code.
 
-**Output:** `dist/ArrowQuickSwitch-0.6.1.dll`.
+**Output:** `dist/ArrowQuickSwitch-0.6.2.dll`.
 
 The tests cover configuration migration, keyboard/controller bindings, wheel
-selection, switching policy, text fitting, icon formats, hooking with Control
-Flow Guard enabled, and D3D12/WARP rendering. Graphics checks run on the software
+selection, switching policy, text fitting, icon formats, window-message input and
+focus behavior, hooking with Control
+Flow Guard enabled, RW-to-RX trampoline memory and cleanup, and D3D12/WARP rendering. Graphics checks run on the software
 WARP adapter, including HDR10/scRGB paths, without launching Elden Ring.
 
 To preserve an existing DLL and build a separate test copy instead:
@@ -76,8 +77,8 @@ do not create a release ZIP.
 After a normal build:
 
 ```bat
-python tools\verify_binary.py dist\ArrowQuickSwitch-0.6.1.dll
-python tools\smoke_test_switcher.py dist\ArrowQuickSwitch-0.6.1.dll
+python tools\verify_binary.py dist\ArrowQuickSwitch-0.6.2.dll
+python tools\smoke_test_switcher.py dist\ArrowQuickSwitch-0.6.2.dll
 ```
 
 Use `dist\ArrowQuickSwitch-testing.dll` in both commands for a test build.
@@ -88,7 +89,7 @@ hosts are rejected before hooks are installed. Neither launches the game.
 To record the output's SHA-256 from PowerShell:
 
 ```powershell
-Get-FileHash .\dist\ArrowQuickSwitch-0.6.1.dll -Algorithm SHA256
+Get-FileHash .\dist\ArrowQuickSwitch-0.6.2.dll -Algorithm SHA256
 ```
 
 The [security review](docs/BUILD_SECURITY_REVIEW.md) records the previously tested
@@ -105,7 +106,7 @@ build-release.cmd
 ```
 
 This runs the normal build and tests, then creates
-`release/ArrowQuickSwitch-0.6.1.zip` using built-in Windows/.NET ZIP support.
+`release/ArrowQuickSwitch-0.6.2.zip` using built-in Windows/.NET ZIP support.
 It verifies the archive layout and checks every compressed file against the staged
 original using SHA-256. It packages the DLL, documentation and dependency licenses
 in `licenses/`, and never includes the user's INI or development launchers.
@@ -122,3 +123,19 @@ Follow the ME3 entry in the repository README and launch offline on the supporte
 rejected. Check all four wheels, paging/cancellation, F10 settings input, saved
 bindings, artwork, sounds and normal input after closing the panel. Automated
 checks alone do not establish compatibility with a new game or mod version.
+
+## Temporary build without item artwork extraction
+
+```bat
+build.cmd --test-no-icons
+```
+
+Output: `dist/ArrowQuickSwitch-no-icons-testing.dll`. This diagnostic mode links
+a disabled provider instead of the item-artwork worker, archive reader, Oodle
+loader, decompressor and private D3D11 texture decoder. Existing effect badges
+and the wheel/settings renderer remain available. Appearance settings are not
+modified. It does not replace the installed DLL or the ordinary test DLL.
+
+Normal `build.cmd`, `build.cmd --test` and `build-release.cmd` still include full
+item artwork support. The diagnostic build is for isolating this component, not
+for distribution or proof that any antivirus detection is a false positive.

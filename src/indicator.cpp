@@ -698,6 +698,10 @@ bool render(IDXGISwapChain* swapchain,const Status& current,float opacity) {
 HRESULT STDMETHODCALLTYPE present_hook(IDXGISwapChain* chain,UINT sync,UINT flags) {
     try {
     DWORD foregroundPid{}; GetWindowThreadProcessId(GetForegroundWindow(),&foregroundPid);
+    DXGI_SWAP_CHAIN_DESC inputDesc{};
+    if(!(flags&DXGI_PRESENT_TEST) && SUCCEEDED(chain->GetDesc(&inputDesc)) &&
+       inputDesc.BufferDesc.Width>=640 && inputDesc.BufferDesc.Height>=360 && IsWindowVisible(inputDesc.OutputWindow))
+        settings_ui::attach_input_window(inputDesc.OutputWindow);
     settings_ui::synchronize();
     if (!(flags&DXGI_PRESENT_TEST) && gameplay.load() && capturedQueue.load() &&
         foregroundPid==GetCurrentProcessId() && GetTickCount64()-gameplayUpdated.load()<250) {
@@ -836,7 +840,11 @@ bool install(HMODULE module,const Settings& options,Logger log) {
         if (MH_QueueEnableHook(target)!=MH_OK) { for (auto previous:created) MH_RemoveHook(previous); return false; }
     }
     if (MH_ApplyQueued()!=MH_OK) {
-        for (auto target:created) { MH_DisableHook(target); MH_RemoveHook(target); }
+        // Keep trampoline storage valid for callbacks already entering a hook.
+        // The DLL is pinned for process lifetime; do not free it after activation.
+        for (auto target:created) MH_QueueDisableHook(target);
+        const auto rollback=MH_ApplyQueued();
+        if(logger)logger("Indicator: hook activation failed, rollback=%d; trampoline storage retained.",rollback);
         return false;
     }
     if (logger) logger("Indicator: rendering hooks ready (duration=%ums, always=%u).",settings.duration,settings.alwaysShow?1u:0u);

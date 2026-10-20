@@ -9,7 +9,7 @@
 
 namespace arrow_switch::item_icons {
 namespace {
-constexpr std::size_t maxAsset=512ull*1024*1024;
+constexpr std::size_t maxAsset=maxIconAssetBytes;
 // Data0's public RSA modulus and exponent are archive format constants.
 constexpr char modulus[]=
     "F518EEDB086BB970D5419A5FCA55443DE3719BB5E0307703C9A691508A57404D"
@@ -34,8 +34,9 @@ bool disk(const std::filesystem::path& path,Bytes& bytes,std::size_t limit=maxAs
 bool decrypt_ranges(View header,std::size_t keyOffset,Bytes& bytes) {
     if(!keyOffset)return true;
     // The archive supplies the AES key and its encrypted byte ranges per file.
+    if(keyOffset>header.size() || header.size()-keyOffset<20)return false;
     const auto ranges=value<std::int32_t>(header,keyOffset+16);
-    if(ranges<0 || ranges>4096 || keyOffset>header.size() || 20ull+static_cast<std::size_t>(ranges)*16>header.size()-keyOffset)return false;
+    if(ranges<0 || ranges>4096 || static_cast<std::size_t>(ranges)>(header.size()-keyOffset-20)/16)return false;
     Crypto aes;
     if(BCryptOpenAlgorithmProvider(&aes.algorithm,BCRYPT_AES_ALGORITHM,nullptr,0)!=0 ||
        BCryptSetProperty(aes.algorithm,BCRYPT_CHAINING_MODE,reinterpret_cast<PUCHAR>(const_cast<wchar_t*>(BCRYPT_CHAIN_MODE_ECB)),sizeof(BCRYPT_CHAIN_MODE_ECB),0)!=0 ||
@@ -100,13 +101,13 @@ bool Archive::packed(const std::string& relative,Bytes& bytes) {
 }
 bool Archive::unpack(Bytes& bytes) {
     if(!magic(bytes,0,"DCX\0"))return !bytes.empty();
-    if(bytes.size()<76)return false;
-    const auto size=big32(bytes,28),compressed=big32(bytes,32);
-    if(!size || size>maxAsset || compressed>bytes.size()-76)return false;
+    DcxPayload payload;
+    if(!dcx_payload(bytes,payload))return false;
+    const auto size=payload.decoded,compressed=payload.compressed;
     Bytes decoded(size);bool ok=false;
-    if(magic(bytes,40,"DFLT")){
+    if(payload.codec==DcxCodec::deflate){
         ok=tinfl_decompress_mem_to_mem(decoded.data(),decoded.size(),bytes.data()+76,compressed,TINFL_FLAG_PARSE_ZLIB_HEADER)==size;
-    }else if(magic(bytes,40,"KRAK")){
+    }else if(payload.codec==DcxCodec::kraken){
         using Decompress=long long(__stdcall*)(const void*,long long,void*,long long,int,int,int,void*,long long,void*,void*,void*,long long,int);
         const auto library=LoadLibraryExW((gameRoot_/L"oo2core_6_win64.dll").c_str(),nullptr,LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR|LOAD_LIBRARY_SEARCH_SYSTEM32);
         if(library){
@@ -125,9 +126,10 @@ bool Archive::read(const std::string& relative,Bytes& bytes) {
         const auto path=std::filesystem::path(relative);
         // Explicit mod root first, then ME3's filesystem redirection, loose
         // game assets, and finally the packed vanilla archive.
-        if((!overrideRoot_.empty() && disk(overrideRoot_/path,bytes)) || disk(path,bytes) || disk(gameRoot_/path,bytes) || packed(relative,bytes))
-            return unpack(bytes);
-    }catch(const std::exception&){bytes.clear();}
-    return false;
+        if((!overrideRoot_.empty() && disk(overrideRoot_/path,bytes)) || disk(path,bytes) || disk(gameRoot_/path,bytes) || packed(relative,bytes)){
+            if(unpack(bytes))return true;
+        }
+    }catch(const std::exception&){}
+    bytes.clear();return false;
 }
 }

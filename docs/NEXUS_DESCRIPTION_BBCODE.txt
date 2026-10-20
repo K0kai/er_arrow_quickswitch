@@ -1,5 +1,6 @@
 [center][size=6][b]Arrow Wheel[/b][/size]
-[i]Quick-switch arrows and bolts with radial wheels, no inventory needed[/i][/center]
+[i]Quick-switch arrows and bolts with radial wheels, no inventory needed[/i]
+[b]Version 0.6.2[/b][/center]
 
 [line]
 
@@ -28,7 +29,9 @@ Hold a key, point the mouse toward the ammo you want, and release. That's it. Ar
 
 [size=3][b][color=#6aa84f]Compatibility[/color][/b][/size]
 
-[b]Tested in-game:[/b] [color=#6d9eeb]The Convergence 3.0.3.0[/color] and [color=#f1c232]Reforged 2.3.5.3[/color]
+[b]Version 0.6.2 has been tested in-game.[/b]
+
+[b]Tested setups:[/b] [color=#6d9eeb]The Convergence 3.0.3.0[/color] and [color=#f1c232]Reforged 2.3.5.3[/color]
 [b]Not fully tested:[/b] vanilla (checked offline only) and physical controllers (simulated tests only).
 Other mods may work if they keep the game's standard equipment and item data. Conflicts are possible with other DLLs that touch the same HUD, input or equipment code.
 
@@ -38,16 +41,16 @@ Other mods may work if they keep the game's standard equipment and item data. Co
 
 [list=1]
 [*]Set up a working ME3 profile for your vanilla or modded Elden Ring. Close the game.[/*]
-[*]Extract the download anywhere you like and keep this layout. If an [font=Courier New]assets[/font] folder is included, keep it next to [font=Courier New]dist[/font] for legacy effect badges. Source builds omit these images and use fallback symbols.
+[*]Extract the download anywhere you like and keep this layout. If an [font=Courier New]assets[/font] folder is included, keep it next to [font=Courier New]dist[/font] for effect badges.
 [code]ArrowQuickSwitch/
   dist/
-    ArrowQuickSwitch-0.6.1.dll
+    ArrowQuickSwitch-0.6.2.dll
   assets/
     wheel-game-icons.rgba[/code]
 [/*]
 [*]Add this to [b]your own copy[/b] of the ME3 profile, replacing the path with where you extracted the mod (forward slashes):
 [code][[natives]]
-path = "C:/Mods/ArrowQuickSwitch/dist/ArrowQuickSwitch-0.6.1.dll"
+path = "C:/Mods/ArrowQuickSwitch/dist/ArrowQuickSwitch-0.6.2.dll"
 load_early = false
 initializer.function = "QuickSwitchInitialize"[/code]
 [/*]

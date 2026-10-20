@@ -6,7 +6,7 @@ Mod Engine 3, and offline play. Close the game before installing.
 Keep the extracted folders together:
 
   ArrowQuickSwitch/
-    dist/ArrowQuickSwitch-0.6.1.dll
+    dist/ArrowQuickSwitch-0.6.2.dll
     licenses/MinHook-LICENSE.txt
     licenses/miniz-LICENSE.txt
     licenses/ImGui-LICENSE.txt
@@ -16,7 +16,7 @@ Add the DLL to your own ME3 profile, replacing the example path with the
 actual location on your PC:
 
   [[natives]]
-  path = "C:/Mods/ArrowQuickSwitch/dist/ArrowQuickSwitch-0.6.1.dll"
+  path = "C:/Mods/ArrowQuickSwitch/dist/ArrowQuickSwitch-0.6.2.dll"
   load_early = false
   initializer.function = "QuickSwitchInitialize"
 

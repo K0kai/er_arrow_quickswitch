@@ -41,7 +41,7 @@ Command Prompt. An explicit `AQS_VCVARS64` environment variable can point to you
 No game installation, external mod profile or downloaded dependency binary is
 required to compile and run the automated tests.
 
-Output: `dist/ArrowQuickSwitch-0.6.1.dll`. Close the game before replacing a loaded
+Output: `dist/ArrowQuickSwitch-0.6.2.dll`. Close the game before replacing a loaded
 DLL. To build a separate DLL without replacing it:
 
 ```bat
@@ -60,7 +60,7 @@ Add the DLL to your own ME3 profile, adjusting the example path:
 
 ```toml
 [[natives]]
-path = "C:/Mods/ArrowQuickSwitch/dist/ArrowQuickSwitch-0.6.1.dll"
+path = "C:/Mods/ArrowQuickSwitch/dist/ArrowQuickSwitch-0.6.2.dll"
 load_early = false
 initializer.function = "QuickSwitchInitialize"
 ```
@@ -74,7 +74,7 @@ not part of the source repository. [Installation and compatibility details](docs
 build-release.cmd
 ```
 
-This rebuilds and tests the mod, then writes `release/ArrowQuickSwitch-0.6.1.zip`.
+This rebuilds and tests the mod, then writes `release/ArrowQuickSwitch-0.6.2.zip`.
 The ZIP contains the DLL, installation/customization documents and dependency
 licenses under `licenses/`. It excludes the user's INI. An optional local legacy
 badge sheet is included if present; source builds work without it, using fallback

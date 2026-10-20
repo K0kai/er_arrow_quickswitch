@@ -1,5 +1,6 @@
 <h1 align="center">Arrow Wheel</h1>
 <p align="center"><em>Quick-switch arrows and bolts with radial wheels, no inventory needed</em></p>
+<p align="center"><strong>Version 0.6.2</strong></p>
 
 ---
 
@@ -22,7 +23,9 @@ Hold a key, point the mouse toward the ammo you want, and release. That's it. Ar
 - **Mod Engine 3 (ME3)**
 - Offline play only. Do not use this DLL online.
 
-**Tested in-game:** The Convergence 3.0.3.0 (four wheels, cross-family arrow selection) and Reforged 2.3.5.3 (secondary-slot switching, paged wheels).
+**Version 0.6.2 has been tested in-game.**
+
+**Tested setups:** The Convergence 3.0.3.0 (four wheels, cross-family arrow selection) and Reforged 2.3.5.3 (secondary-slot switching, paged wheels).
 
 **Not fully tested:** vanilla (checked offline only) and physical controllers (simulated tests only).
 
@@ -33,12 +36,12 @@ Other mods may work if they keep the game's standard equipment and item data. Co
 ## Installation
 
 1. Set up a working ME3 profile for your vanilla or modded Elden Ring. Close the game.
-2. Extract the download anywhere you like and keep this layout. If an `assets` folder is included, keep it next to `dist` for legacy effect badges. Source builds omit these images and use fallback symbols.
+2. Extract the download anywhere you like and keep this layout. If an `assets` folder is included, keep it next to `dist` for effect badges.
 
 ```text
    ArrowQuickSwitch/
      dist/
-       ArrowQuickSwitch-0.6.1.dll
+       ArrowQuickSwitch-0.6.2.dll
      assets/
        wheel-game-icons.rgba
 ```
@@ -47,7 +50,7 @@ Other mods may work if they keep the game's standard equipment and item data. Co
 
 ```toml
    [[natives]]
-   path = "C:/Mods/ArrowQuickSwitch/dist/ArrowQuickSwitch-0.6.1.dll"
+   path = "C:/Mods/ArrowQuickSwitch/dist/ArrowQuickSwitch-0.6.2.dll"
    load_early = false
    initializer.function = "QuickSwitchInitialize"
 ```

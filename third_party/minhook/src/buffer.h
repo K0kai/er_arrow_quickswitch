@@ -38,5 +38,7 @@
 VOID   InitializeBuffer(VOID);
 VOID   UninitializeBuffer(VOID);
 LPVOID AllocateBuffer(LPVOID pOrigin);
+// Called once after construction, before publishing a trampoline.
+BOOL   SealBuffer(LPVOID pBuffer);
 VOID   FreeBuffer(LPVOID pBuffer);
 BOOL   IsExecutableAddress(LPVOID pAddress);
