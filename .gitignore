@@ -1,0 +1,38 @@
+# Generated output and local dependencies
+/build/
+/tmp/
+/dist/
+/release/
+/reference/
+/vendor/
+/tools/python/
+__pycache__/
+*.log
+*.pdb
+*.obj
+*.lib
+*.exp
+
+# Local configuration and game-derived assets
+/assets/
+.env
+.env.*
+!.env.example
+*.pem
+*.pfx
+*.p12
+*.key
+
+# Private development launchers, profiles and research notes
+/Launch Arrow QuickSwitch*.cmd
+/build-ammo-wheels.cmd
+/docs/findings.md
+/tools/make_profile.py
+/tools/make_reforged_profile.py
+/tools/make_ammo_wheels_profile.py
+/tools/check_layout.cmd
+/tools/param_layout.cpp
+/tools/live_inspect.py
+/tools/live_names.py
+/tools/verify_switcher_target.py
+/src/diagnostic.cpp

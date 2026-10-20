@@ -1,0 +1,41 @@
+Arrow QuickSwitch — installation
+
+Requires Windows Elden Ring 1.17.1 (executable file version 2.7.1.0),
+Mod Engine 3, and offline play. Close the game before installing.
+
+Keep the extracted folders together:
+
+  ArrowQuickSwitch/
+    dist/ArrowQuickSwitch-0.6.1.dll
+    licenses/MinHook-LICENSE.txt
+    licenses/miniz-LICENSE.txt
+    licenses/ImGui-LICENSE.txt
+    assets/wheel-game-icons.rgba (optional legacy effect badges)
+
+Add the DLL to your own ME3 profile, replacing the example path with the
+actual location on your PC:
+
+  [[natives]]
+  path = "C:/Mods/ArrowQuickSwitch/dist/ArrowQuickSwitch-0.6.1.dll"
+  load_early = false
+  initializer.function = "QuickSwitchInitialize"
+
+Launch through that profile. Equip an initial ammo type manually in every
+slot you want to use. Hold 1, 2, 3, or 4 for the corresponding arrow or bolt
+wheel, point, and release to equip. The center cancels. Press F10 to edit keyboard and controller bindings in the settings panel.
+Save to apply them without restarting. Bindings can also be edited in
+dist/ArrowQuickSwitch.ini.
+The mod creates that INI on first launch and adds new settings after updates
+without changing your existing values.
+The opening and hover sounds can be disabled with [Audio] Enabled=0.
+Set [Switching] CycleSameFamily=1 to keep each wheel within the equipped
+ammo type. The default 0 allows normal/great arrows or bolts/ballista bolts.
+
+The indicator and Direct3D wheel changes in this package passed build and
+software GPU preview checks but still need an in-game visual check.
+
+Press F10 during gameplay for customization. Open a wheel once to populate the
+preview, adjust settings, then save. The panel does not pause the game.
+The shortcut is [Controls] SettingsKey. None or blank disables the panel;
+restore a shortcut in the INI to enable it again. See CUSTOMIZATION.md for
+appearance controls and runtime artwork options.

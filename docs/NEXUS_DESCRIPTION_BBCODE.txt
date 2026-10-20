@@ -1,0 +1,103 @@
+[center][size=6][b]Arrow Wheel[/b][/size]
+[i]Quick-switch arrows and bolts with radial wheels, no inventory needed[/i][/center]
+
+[line]
+
+[size=4][b]What it does[/b][/size]
+
+Hold a key, point the mouse toward the ammo you want, and release. That's it. Arrow Wheel adds [b]four wheels[/b], one for each arrow slot and one for each bolt slot, with optional controller support.
+
+[list]
+[*][b]Wheels:[/b] arrow slots 1 and 2 on [b]1[/b] and [b]2[/b], bolt slots 1 and 2 on [b]3[/b] and [b]4[/b] (rebindable).[/*]
+[*][b]What's shown:[/b] only ammo you actually own. Arrow wheels list arrows and greatarrows, bolt wheels list bolts and ballista bolts. Empty stacks and ammo already equipped in the paired slot are hidden.[/*]
+[*][b]Info on each wedge:[/b] name in your game language, quantity, item artwork, and damage/status badges. Multiple effects can appear together.[/*]
+[*][b]Many arrows?[/b] More than eight types are split into pages. Hold the wheel key and scroll [b]up[/b] for the next page, [b]down[/b] for the previous one.[/*]
+[*][b]Works with modded ammo:[/b] names and effects are read from the running game, so there are no fixed ammo ID lists and no Convergence-specific tables.[/*]
+[*][b]Controller (optional):[/b] hold a bound button, aim with the right stick, release. Page with [b]RB[/b]/[b]LB[/b].[/*]
+[/list]
+
+[line]
+
+[size=4][b]Requirements[/b][/size]
+
+[list]
+[*]Windows Elden Ring [b]1.17.1[/b] (exe version 2.7.1.0). [b]Patch 1.17.2 is not supported yet.[/b] The mod checks the game version before loading.[/*]
+[*][b]Mod Engine 3 (ME3)[/b][/*]
+[*]Offline play only. Do not use this DLL online.[/*]
+[/list]
+
+[size=3][b][color=#6aa84f]Compatibility[/color][/b][/size]
+
+[b]Tested in-game:[/b] [color=#6d9eeb]The Convergence 3.0.3.0[/color] and [color=#f1c232]Reforged 2.3.5.3[/color]
+[b]Not fully tested:[/b] vanilla (checked offline only) and physical controllers (simulated tests only).
+Other mods may work if they keep the game's standard equipment and item data. Conflicts are possible with other DLLs that touch the same HUD, input or equipment code.
+
+[line]
+
+[size=4][b]Installation[/b][/size]
+
+[list=1]
+[*]Set up a working ME3 profile for your vanilla or modded Elden Ring. Close the game.[/*]
+[*]Extract the download anywhere you like and keep this layout. If an [font=Courier New]assets[/font] folder is included, keep it next to [font=Courier New]dist[/font] for legacy effect badges. Source builds omit these images and use fallback symbols.
+[code]ArrowQuickSwitch/
+  dist/
+    ArrowQuickSwitch-0.6.1.dll
+  assets/
+    wheel-game-icons.rgba[/code]
+[/*]
+[*]Add this to [b]your own copy[/b] of the ME3 profile, replacing the path with where you extracted the mod (forward slashes):
+[code][[natives]]
+path = "C:/Mods/ArrowQuickSwitch/dist/ArrowQuickSwitch-0.6.1.dll"
+load_early = false
+initializer.function = "QuickSwitchInitialize"[/code]
+[/*]
+[*]Launch through that ME3 profile.[/*]
+[*][b]Important:[/b] open the equipment screen and equip some ammo in each slot you want to control, at least once. Then hold [b]1/2/3/4[/b], point, and release. Pointing at the center of the wheel cancels.[/*]
+[/list]
+
+Nothing needs to be copied into the Elden Ring folder.
+
+[line]
+
+[size=4][b]Configuration[/b][/size]
+
+Press [b]F10[/b] during gameplay to open the settings panel, powered by [b]Dear ImGui[/b]. Open a wheel once to populate its preview.
+
+[list]
+[*][b]Wheel and indicator:[/b] customize colors, transparency, size, position, text, icons, selection lighting, and decorative trim. The ammo indicator can also be turned off.[/*]
+[*][b]Controls:[/b] change keyboard and controller bindings for all four wheels and controller paging. Keyboard chords such as [font=Courier New]Ctrl+E[/font] and controller chords such as [font=Courier New]LT+DPadUp[/font] are supported.[/*]
+[*][b]Behavior:[/b] toggle sounds and restrict each wheel to its equipped ammo type, if preferred.[/*]
+[/list]
+
+Appearance changes preview immediately. Save to keep them and apply controls and behavior without restarting. Controller buttons still reach the game, so choose bindings that avoid gameplay conflicts.
+
+The settings shortcut can also be changed or removed. Removing it disables the panel until you set a shortcut again under [font=Courier New][Controls] SettingsKey[/font] in the INI.
+
+The mod creates [font=Courier New]dist/ArrowQuickSwitch.ini[/font] on first launch. [b]Keep your existing INI when updating.[/b] New settings are added automatically. The included [font=Courier New]CUSTOMIZATION.md[/font] explains the available appearance options and alternate icon source folders. For troubleshooting, [font=Courier New]DiagnosticKey[/font] defaults to [b]F8[/b].
+
+Arrow and bolt artwork is loaded from installed game/mod files at runtime. Missing artwork falls back to effect badges.
+
+[line]
+
+[size=4][b]Limitations[/b][/size]
+
+[list]
+[*]An empty or unrecognized slot needs ammo equipped manually once.[/*]
+[*]Effect icons follow the active weapon and linked status data. Effects that another mod implements through bullets or other systems may be missed or need extra icon support.[/*]
+[/list]
+
+[line]
+
+[size=4][b]Planned[/b][/size]
+
+[list]
+[*]Manual wheel reorganization (choose which ammo sits in each wedge)[/*]
+[/list]
+
+[line]
+
+[size=4][b]AI use disclosure[/b][/size]
+
+AI tools helped investigate the game's data, write and revise code, run checks, and draft documentation. I chose the features, reviewed the code, and tested the wheels and cross-family switching in-game.
+
+Effect icons are derived from Elden Ring's in-game UI assets. This is an unofficial fan mod, not affiliated with or endorsed by FromSoftware, Bandai Namco, The Convergence team, or other mod authors.

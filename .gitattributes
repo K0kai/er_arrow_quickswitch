@@ -1,0 +1,4 @@
+* text=auto
+*.cmd text eol=crlf
+# Preserve upstream formatting in vendored source.
+third_party/** -whitespace
