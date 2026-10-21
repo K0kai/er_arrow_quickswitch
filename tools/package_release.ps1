@@ -18,6 +18,7 @@ Write-Host "Building Arrow QuickSwitch $version..."
 if ($LASTEXITCODE -ne 0) { throw "Build or tests failed (exit code $LASTEXITCODE). No archive was created." }
 
 $files = [ordered]@{
+    'licenses\ArrowWheel-LICENSE.txt' = Join-Path $root 'LICENSE'
     "dist\$dllName" = Join-Path $root "dist\$dllName"
     'licenses\MinHook-LICENSE.txt' = Join-Path $root 'dist\MinHook-LICENSE.txt'
     'README_INSTALL.txt' = Join-Path $root 'docs\RELEASE_INSTALL.txt'

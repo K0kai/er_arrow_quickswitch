@@ -1,0 +1,50 @@
+Arrow Wheel Attribution-Noncommercial License 1.0
+
+Copyright (c) 2026 K0kai
+
+1. Permission
+
+Permission is granted, free of charge, to use, copy, study, modify, and
+redistribute this project's original source code, compiled binaries, and
+documentation, including modified versions, subject to the following conditions.
+
+2. Attribution and notices
+
+Redistributions must retain this license and the copyright notice, credit
+K0kai as the original author, and include the project URL:
+https://github.com/K0kai/er_arrow_quickswitch
+
+Modified versions must identify that they have been modified and must not
+imply endorsement by the original author. These conditions must accompany
+redistributed copies and derivative works containing this project's code.
+
+3. Noncommercial use only
+
+Commercial use or monetization of this software or derivative works requires
+prior written permission from K0kai. This includes selling copies or access,
+paid bundles, paywalls, paid services using the software, and receiving Nexus
+Donation Points, advertising revenue, sponsorship payments, or donations
+specifically tied to its distribution or development. Free personal use and
+free sharing without such monetization are permitted.
+
+4. Third-party material
+
+This license applies only to material for which K0kai holds the applicable
+rights. Dear ImGui, MinHook, miniz, and other third-party material retain
+their respective licenses. Game assets and trademarks belong to their
+respective owners; this license grants no rights to them.
+
+5. Termination
+
+The permissions granted by this license terminate if you fail to comply
+with its conditions. Termination does not affect copies held by recipients
+who continue to comply with this license.
+
+6. Disclaimer
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. TO THE EXTENT
+PERMITTED BY APPLICABLE LAW, THE AUTHORS AND COPYRIGHT HOLDERS SHALL NOT
+BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY ARISING FROM, OUT OF,
+OR IN CONNECTION WITH THE SOFTWARE OR ITS USE.

@@ -89,6 +89,11 @@ symbols while item artwork is loaded at runtime.
 - [Manual wheel organization plan](docs/MANUAL_WHEEL_ORGANIZATION.md).
 
 Dear ImGui, MinHook and miniz retain their upstream licenses under `third_party`.
+The project's original code and documentation use the
+[Arrow Wheel Attribution-Noncommercial License](LICENSE): use, modification,
+and redistribution are allowed with credit to K0kai; commercial use or
+monetization requires prior written permission. This includes Nexus Donation
+Points and donations or advertising tied to the mod.
 This is an unofficial fan mod and is not affiliated with FromSoftware, Bandai
 Namco, or other mod authors.
 

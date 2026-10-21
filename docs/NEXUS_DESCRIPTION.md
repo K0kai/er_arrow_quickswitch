@@ -100,3 +100,7 @@ AI tools helped investigate the game's data, write and revise code, run checks, 
 Effect icons are derived from Elden Ring's in-game UI assets. This is an unofficial fan mod, not affiliated with or endorsed by FromSoftware, Bandai Namco, The Convergence team, or other mod authors.
 
 The DLL filename stays `ArrowQuickSwitch.dll` across updates. Set your launcher profile to this filename once. Check its version by hovering over it in Windows Explorer or opening Properties > Details.
+
+## Permissions
+
+You may use, modify, and redistribute this mod with credit to K0kai and a link to the original repository. Commercial use or monetization requires prior written permission, including Nexus Donation Points and donations or advertising tied to the mod. See the repository LICENSE for full terms. Third-party components retain their own licenses.
