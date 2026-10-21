@@ -134,7 +134,7 @@ def main() -> None:
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
     build_script = (root / "build-switcher.cmd").read_text(encoding="utf-8")
-    versions = set(re.findall(r"ArrowQuickSwitch-(\d+\.\d+\.\d+)\.dll", build_script))
+    versions = set(re.findall(r"AQS_VERSION=(\d+\.\d+\.\d+)", build_script))
     if len(versions) != 1:
         raise ValueError("Expected exactly one mod version in build-switcher.cmd")
     version = versions.pop()

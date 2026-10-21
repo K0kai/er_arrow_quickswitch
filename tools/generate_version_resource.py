@@ -7,7 +7,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--filename", required=True)
 args = parser.parse_args()
 root = Path(__file__).resolve().parents[1]
-versions = set(re.findall(r"ArrowQuickSwitch-(\d+\.\d+\.\d+)\.dll", (root/"build-switcher.cmd").read_text()))
+versions = set(re.findall(r"AQS_VERSION=(\d+\.\d+\.\d+)", (root/"build-switcher.cmd").read_text()))
 if len(versions) != 1:
     raise SystemExit("Expected one release version")
 version = versions.pop()

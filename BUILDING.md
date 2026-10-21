@@ -52,11 +52,11 @@ compiles the included dependencies and mod source, and runs the automated tests.
 A successful run exits with code 0 and reports the output DLL. Any failed build
 or test stops the script with a nonzero exit code.
 
-**Output:** `dist/ArrowQuickSwitch-0.6.2.dll`.
+**Output:** `dist/ArrowQuickSwitch.dll`.
 
 The tests cover configuration migration, keyboard/controller bindings, wheel
 selection, switching policy, text fitting, icon formats, window-message input and
-focus behavior, hooking with Control
+focus behavior, click-to-rebind capture and controller chords, hooking with Control
 Flow Guard enabled, RW-to-RX trampoline memory and cleanup, and D3D12/WARP rendering. Graphics checks run on the software
 WARP adapter, including HDR10/scRGB paths, without launching Elden Ring.
 
@@ -77,8 +77,8 @@ do not create a release ZIP.
 After a normal build:
 
 ```bat
-python tools\verify_binary.py dist\ArrowQuickSwitch-0.6.2.dll
-python tools\smoke_test_switcher.py dist\ArrowQuickSwitch-0.6.2.dll
+python tools\verify_binary.py dist\ArrowQuickSwitch.dll
+python tools\smoke_test_switcher.py dist\ArrowQuickSwitch.dll
 ```
 
 Use `dist\ArrowQuickSwitch-testing.dll` in both commands for a test build.
@@ -89,7 +89,7 @@ hosts are rejected before hooks are installed. Neither launches the game.
 To record the output's SHA-256 from PowerShell:
 
 ```powershell
-Get-FileHash .\dist\ArrowQuickSwitch-0.6.2.dll -Algorithm SHA256
+Get-FileHash .\dist\ArrowQuickSwitch.dll -Algorithm SHA256
 ```
 
 The [security review](docs/BUILD_SECURITY_REVIEW.md) records the previously tested
@@ -139,3 +139,17 @@ modified. It does not replace the installed DLL or the ordinary test DLL.
 Normal `build.cmd`, `build.cmd --test` and `build-release.cmd` still include full
 item artwork support. The diagnostic build is for isolating this component, not
 for distribution or proof that any antivirus detection is a false positive.
+
+## Launch a separate test build
+
+After `build.cmd --test`, create a separate ME3 profile from your working profile:
+
+```bat
+python tools\make_test_profile.py --source "C:\Mods\working.me3" --dll dist\ArrowQuickSwitch-testing.dll --output dist\quickswitch-testing.me3
+```
+
+Launch the generated profile through ME3. The helper preserves existing entries,
+resolves relative paths against the source profile, and replaces only its one
+QuickSwitch DLL entry. It refuses to overwrite the source profile.
+
+The DLL filename stays `ArrowQuickSwitch.dll` across updates. Set your launcher profile to this filename once. Check its version by hovering over it in Windows Explorer or opening Properties > Details.

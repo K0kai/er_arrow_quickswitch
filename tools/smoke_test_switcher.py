@@ -10,9 +10,9 @@ folder=root/'build'/'smoke-switcher'
 folder.mkdir(parents=True,exist_ok=True)
 log=folder/'ArrowQuickSwitch-0.4.log'
 if log.exists(): log.unlink()
-source=Path(sys.argv[1]).resolve() if len(sys.argv)>1 else root/'dist'/'ArrowQuickSwitch-0.6.2.dll'
-shutil.copy2(source,folder/'ArrowQuickSwitch-0.6.2.dll')
-dll=ctypes.CDLL(str(folder/'ArrowQuickSwitch-0.6.2.dll'))
+source=Path(sys.argv[1]).resolve() if len(sys.argv)>1 else root/'dist'/'ArrowQuickSwitch.dll'
+shutil.copy2(source,folder/'ArrowQuickSwitch.dll')
+dll=ctypes.CDLL(str(folder/'ArrowQuickSwitch.dll'))
 initialize=dll.QuickSwitchInitialize
 initialize.argtypes=[]; initialize.restype=ctypes.c_bool
 assert initialize() is True

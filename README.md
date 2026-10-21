@@ -41,7 +41,7 @@ Command Prompt. An explicit `AQS_VCVARS64` environment variable can point to you
 No game installation, external mod profile or downloaded dependency binary is
 required to compile and run the automated tests.
 
-Output: `dist/ArrowQuickSwitch-0.6.2.dll`. Close the game before replacing a loaded
+Output: `dist/ArrowQuickSwitch.dll`. Close the game before replacing a loaded
 DLL. To build a separate DLL without replacing it:
 
 ```bat
@@ -60,7 +60,7 @@ Add the DLL to your own ME3 profile, adjusting the example path:
 
 ```toml
 [[natives]]
-path = "C:/Mods/ArrowQuickSwitch/dist/ArrowQuickSwitch-0.6.2.dll"
+path = "C:/Mods/ArrowQuickSwitch/dist/ArrowQuickSwitch.dll"
 load_early = false
 initializer.function = "QuickSwitchInitialize"
 ```
@@ -91,3 +91,5 @@ symbols while item artwork is loaded at runtime.
 Dear ImGui, MinHook and miniz retain their upstream licenses under `third_party`.
 This is an unofficial fan mod and is not affiliated with FromSoftware, Bandai
 Namco, or other mod authors.
+
+The DLL filename stays `ArrowQuickSwitch.dll` across updates. Set your launcher profile to this filename once. Check its version by hovering over it in Windows Explorer or opening Properties > Details.

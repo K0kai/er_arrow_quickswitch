@@ -41,7 +41,7 @@ Other mods may work if they keep the game's standard equipment and item data. Co
 ```text
    ArrowQuickSwitch/
      dist/
-       ArrowQuickSwitch-0.6.2.dll
+       ArrowQuickSwitch.dll
      assets/
        wheel-game-icons.rgba
 ```
@@ -50,7 +50,7 @@ Other mods may work if they keep the game's standard equipment and item data. Co
 
 ```toml
    [[natives]]
-   path = "C:/Mods/ArrowQuickSwitch/dist/ArrowQuickSwitch-0.6.2.dll"
+   path = "C:/Mods/ArrowQuickSwitch/dist/ArrowQuickSwitch.dll"
    load_early = false
    initializer.function = "QuickSwitchInitialize"
 ```
@@ -67,7 +67,7 @@ Nothing needs to be copied into the Elden Ring folder.
 Press **F10** during gameplay to open the settings panel, powered by **Dear ImGui**. Open a wheel once to populate its preview.
 
 - **Wheel and indicator:** customize colors, transparency, size, position, text, icons, selection lighting, and decorative trim. The ammo indicator can also be turned off.
-- **Controls:** change keyboard and controller bindings for all four wheels and controller paging. Keyboard chords such as `Ctrl+E` and controller chords such as `LT+DPadUp` are supported.
+- **Controls:** change keyboard and controller bindings for all four wheels and controller paging. Click a binding and press the desired key or mouse button; hold controller buttons together and release to capture a chord. Escape cancels. Manual name entry is also available. Keyboard chords such as `Ctrl+E` and controller chords such as `LT+DPadUp` are supported.
 - **Behavior:** toggle sounds and restrict each wheel to its equipped ammo type, if preferred.
 
 Appearance changes preview immediately. Save to keep them and apply controls and behavior without restarting. Controller buttons still reach the game, so choose bindings that avoid gameplay conflicts.
@@ -98,3 +98,5 @@ Arrow and bolt artwork is loaded from installed game/mod files at runtime. Missi
 AI tools helped investigate the game's data, write and revise code, run checks, and draft documentation. I chose the features, reviewed the code, and tested the wheels and cross-family switching in-game.
 
 Effect icons are derived from Elden Ring's in-game UI assets. This is an unofficial fan mod, not affiliated with or endorsed by FromSoftware, Bandai Namco, The Convergence team, or other mod authors.
+
+The DLL filename stays `ArrowQuickSwitch.dll` across updates. Set your launcher profile to this filename once. Check its version by hovering over it in Windows Explorer or opening Properties > Details.

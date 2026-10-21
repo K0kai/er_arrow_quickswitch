@@ -7,6 +7,7 @@
 #include "wheel_bindings.hpp"
 #include "ui_cursor.hpp"
 #include "window_input.hpp"
+#include "binding_capture.hpp"
 #include "../third_party/imgui/imgui.h"
 #include "../third_party/imgui/backends/imgui_impl_win32.h"
 #include "../third_party/imgui/backends/imgui_impl_dx12.h"
@@ -29,6 +30,28 @@ unsigned hoverCooldown=90;
 indicator::Settings editing;
 wheel_bindings::Values controls;
 std::string notice;
+binding_capture::Capture capture;
+int captureTarget=-1;
+bool manualBindings=false;
+std::atomic<bool> captureBlocked{false},padConnected{false};
+std::atomic<std::uint32_t> padButtons{0};
+std::wstring& capture_value(int target){
+    if(target<4)return controls.keyboard[static_cast<unsigned>(target)];
+    if(target<10)return controls.pad[static_cast<unsigned>(target-4)];
+    return controls.shortcut;
+}
+void update_capture(){
+    const auto keys=window_input::snapshot();
+    capture.keyboard(keys);
+    capture.controller_buttons(padButtons.load(),padConnected.load());
+    if(capture.completed && captureTarget>=0){
+        capture_value(captureTarget)=capture.result;dirty=true;capture.completed=false;
+        notice="Binding captured. Save changes to apply it.";
+    }
+    if(capture.cancelled){capture.cancelled=false;notice="Rebinding cancelled.";}
+    if(!capture.active && !binding_capture::held(keys) && !padButtons.load())captureBlocked.store(false);
+}
+
 struct Context {
     ImGuiContext* previous=ImGui::GetCurrentContext();
     Context(){ImGui::SetCurrentContext(context);}
@@ -43,6 +66,9 @@ LRESULT CALLBACK messages(HWND hwnd,UINT message,WPARAM wParam,LPARAM lParam){
         if(message==WM_NCDESTROY){window=nullptr;originalProc=nullptr;ready=false;visible.store(false);}
         if(context && ready && visible.load()){
             Context current;
+            const bool capturing=captureBlocked.load();
+            capture.keyboard(window_input::snapshot());
+            if(capturing && (message==WM_KEYDOWN || message==WM_SYSKEYDOWN || message==WM_CHAR))return 0;
             if(message==WM_INPUT){
                 RAWINPUT raw{};UINT bytes=sizeof(raw);
                 if(GetRawInputData(reinterpret_cast<HRAWINPUT>(lParam),RID_INPUT,&raw,&bytes,sizeof(RAWINPUTHEADER))!=static_cast<UINT>(-1) && raw.header.dwType==RIM_TYPEMOUSE)
@@ -66,7 +92,7 @@ void load(){
     audio=GetPrivateProfileIntW(L"Audio",L"Enabled",1,file.c_str())!=0;
     hoverCooldown=std::clamp(GetPrivateProfileIntW(L"Audio",L"HoverCooldownMs",90,file.c_str()),50u,300u);
     controls=wheel_bindings::load(config);
-    dirty=false;notice.clear();
+    dirty=false;notice.clear();capture={};captureTarget=-1;captureBlocked.store(false);
 }
 bool slider(const char* label,unsigned& setting,int low,int high,const char* format="%d"){
     int value=static_cast<int>(setting);if(!ImGui::SliderInt(label,&value,low,high,format))return false;
@@ -85,6 +111,32 @@ bool text(const char* label,std::wstring& value){
         value=wide.data();
     }
     return ImGui::IsItemDeactivatedAfterEdit();
+}
+bool binding(const char* label,std::wstring& value,int target,bool optional=false){
+    if(manualBindings)return text(label,value);
+    ImGui::PushID(target);
+    std::array<char,512> displayed{};
+    WideCharToMultiByte(CP_UTF8,0,value.c_str(),-1,displayed.data(),static_cast<int>(displayed.size()),nullptr,nullptr);
+    ImGui::BeginDisabled(captureBlocked.load());
+    if(ImGui::Button(displayed[0]?displayed.data():"None",ImVec2(155,0))){
+        captureTarget=target;
+        capture.begin(target>=4 && target<10?binding_capture::Device::controller:binding_capture::Device::keyboard,
+            window_input::snapshot(),padButtons.load());
+        captureBlocked.store(true);notice.clear();
+    }
+    ImGui::SameLine();
+    const std::string_view caption(label);const auto end=caption.find("##");
+    ImGui::TextUnformatted(label,label+(end==caption.npos?caption.size():end));
+    bool changed=false;
+    if(optional){ImGui::SameLine();if(ImGui::SmallButton("Clear")){value=L"None";changed=true;}}
+    ImGui::EndDisabled();
+    if(capture.active && captureTarget==target){
+        if(capture.waiting)ImGui::TextWrapped("Release held inputs first. Esc cancels.");
+        else if(capture.device==binding_capture::Device::controller)
+            ImGui::TextWrapped(padConnected.load()?"Hold your button or chord together, then release. Esc cancels.":"Connect a controller, then press its buttons. Esc cancels.");
+        else ImGui::TextWrapped("Press a key or mouse button. Hold modifiers first for a chord. Esc cancels.");
+    }
+    ImGui::PopID();return changed;
 }
 void panel(){
     const auto& io=ImGui::GetIO();
@@ -142,19 +194,21 @@ void panel(){
             if(ImGui::BeginTabItem("Controls")){
                 constexpr const char* keyboardLabels[]{"Arrow slot 1##key","Arrow slot 2##key","Bolt slot 1##key","Bolt slot 2##key"};
                 constexpr const char* padLabels[]{"Arrow slot 1##pad","Arrow slot 2##pad","Bolt slot 1##pad","Bolt slot 2##pad","Next page##pad","Previous page##pad"};
+                ImGui::Checkbox("Edit binding names manually",&manualBindings);
+                ImGui::TextWrapped("Click a binding to record a key, mouse button or controller chord.");
                 ImGui::SeparatorText("Keyboard and mouse");
-                for(unsigned i=0;i<4;++i)changed|=text(keyboardLabels[i],controls.keyboard[i]);
+                for(unsigned i=0;i<4;++i)changed|=binding(keyboardLabels[i],controls.keyboard[i],static_cast<int>(i));
                 ImGui::TextWrapped("Examples: Key1, E, Ctrl+E, Mouse4. Hold to open; release to select.");
                 ImGui::SeparatorText("Controller");
-                for(unsigned i=0;i<6;++i)changed|=text(padLabels[i],controls.pad[i]);
+                for(unsigned i=0;i<6;++i)changed|=binding(padLabels[i],controls.pad[i],static_cast<int>(i+4),true);
                 ImGui::TextWrapped("Use A, B, X, Y, LB, RB, LT, RT, LS, RS, Back, Start, or DPadUp/Down/Left/Right. Join buttons with + for a chord. None disables a binding. Names use Xbox notation.");
                 ImGui::TextWrapped("Bindings apply after saving, without restarting the game.");
                 ImGui::EndTabItem();
             }
             if(ImGui::BeginTabItem("Behavior")){
-                changed|=text("Settings shortcut",controls.shortcut);
+                ImGui::Checkbox("Edit binding names manually",&manualBindings);
+                changed|=binding("Settings shortcut",controls.shortcut,10,true);
                 ImGui::TextWrapped("Examples: F10, Ctrl+F10. None or an empty value disables the panel.");
-                if(ImGui::Button("Remove settings shortcut")){controls.shortcut=L"None";changed=true;}
                 ImGui::TextWrapped("After saving a removed shortcut, re-enable the panel by setting SettingsKey in the INI.");
                 ImGui::Separator();
                 changed|=ImGui::Checkbox("Limit each wheel to its equipped ammo type",&sameFamily);
@@ -167,6 +221,7 @@ void panel(){
         ImGui::EndChild();
         if(changed){dirty=true;indicator::configure(editing);notice.clear();}
         ImGui::Separator();
+        ImGui::BeginDisabled(captureBlocked.load());
         if(ImGui::Button("Save changes")){
             input::Binding shortcut;
             if(const auto* error=wheel_bindings::validate(controls))notice=error;
@@ -186,6 +241,7 @@ void panel(){
         }
         ImGui::SameLine();if(ImGui::Button("Revert")){load();indicator::configure(editing);}
         ImGui::SameLine();if(ImGui::Button(dirty?"Close without saving":"Close"))visible.store(false);
+        ImGui::EndDisabled();
         if(!notice.empty())ImGui::TextWrapped("%s",notice.c_str());
         else if(dirty)ImGui::TextUnformatted("Unsaved changes");
     }
@@ -221,12 +277,15 @@ void ensure_input_window(){
 }
 void set_config(const std::filesystem::path& path){std::lock_guard<std::recursive_mutex> guard(mutex);config=path;}
 bool is_open(){return visible.load();}
+bool is_capturing(){return visible.load() && captureBlocked.load();}
+void controller_input(std::uint32_t buttons,bool connected){padButtons.store(buttons);padConnected.store(connected);}
 void toggle(){if(panelEnabled.load())visible.store(!visible.load());}
 void close(){visible.store(false);}
 void set_enabled(bool value){panelEnabled.store(value);if(!value)visible.store(false);}
 void mouse_input(const RAWMOUSE& mouse){
     std::lock_guard<std::recursive_mutex> guard(mutex);
     if(!ready || !visible.load() || !context)return;
+    capture.keyboard(window_input::snapshot());
     Context current;RECT area{};GetClientRect(window,&area);
     auto& io=ImGui::GetIO();
     if(mouse.usFlags&MOUSE_MOVE_ABSOLUTE){
@@ -240,7 +299,7 @@ void mouse_input(const RAWMOUSE& mouse){
     io.AddMousePosEvent(cursor.x,cursor.y);
     constexpr USHORT down[]{RI_MOUSE_LEFT_BUTTON_DOWN,RI_MOUSE_RIGHT_BUTTON_DOWN,RI_MOUSE_MIDDLE_BUTTON_DOWN,RI_MOUSE_BUTTON_4_DOWN,RI_MOUSE_BUTTON_5_DOWN};
     constexpr USHORT up[]{RI_MOUSE_LEFT_BUTTON_UP,RI_MOUSE_RIGHT_BUTTON_UP,RI_MOUSE_MIDDLE_BUTTON_UP,RI_MOUSE_BUTTON_4_UP,RI_MOUSE_BUTTON_5_UP};
-    for(int i=0;i<5;++i){if(mouse.usButtonFlags&down[i])io.AddMouseButtonEvent(i,true);if(mouse.usButtonFlags&up[i])io.AddMouseButtonEvent(i,false);}
+    for(int i=0;i<5;++i){if(!captureBlocked.load() && (mouse.usButtonFlags&down[i]))io.AddMouseButtonEvent(i,true);if(mouse.usButtonFlags&up[i])io.AddMouseButtonEvent(i,false);}
     const auto wheel=static_cast<SHORT>(mouse.usButtonData)/static_cast<float>(WHEEL_DELTA);
     if(mouse.usButtonFlags&RI_MOUSE_WHEEL)io.AddMouseWheelEvent(0,wheel);
     if(mouse.usButtonFlags&RI_MOUSE_HWHEEL)io.AddMouseWheelEvent(wheel,0);
@@ -292,6 +351,7 @@ bool install(HWND hwnd,ID3D12Device* device,ID3D12CommandQueue* queue,unsigned f
 }
 void render(ID3D12GraphicsCommandList* commands){
     std::lock_guard<std::recursive_mutex> guard(mutex);if(!ready || !visible.load())return;
+    update_capture();
     Context current;auto& io=ImGui::GetIO();io.MouseDrawCursor=true;
     ImGui_ImplDX12_NewFrame();ImGui_ImplWin32_NewFrame();ImGui::NewFrame();panel();ImGui::Render();
     ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(),commands);

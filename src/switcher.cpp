@@ -399,7 +399,7 @@ void update(void* hud) {
         (key_down(VK_MENU)?input::alt:0u) | ((key_down(VK_LWIN)||key_down(VK_RWIN))?input::win:0u);
     const bool diagPressed=diagnosticEdge.sample(key_down(config.diagnostic.key),input::matches(config.diagnostic,modifiers),focused);
     const bool gameplay=focused && game::normal_gameplay(addresses,hud);
-    if(settingsEdge.sample(key_down(config.settingsKey.key),input::matches(config.settingsKey,modifiers),focused) && gameplay){
+    if(settingsEdge.sample(key_down(config.settingsKey.key),input::matches(config.settingsKey,modifiers),focused) && gameplay && !settings_ui::is_capturing()){
         settings_ui::toggle();
         if(wheelOpen){wheelOpen=false;rawWheelOpen.store(false);indicator::publish_wheel({},-1,false);}
         pendingWheel=0xFFFFFFFFu;
@@ -409,9 +409,10 @@ void update(void* hud) {
     std::array<bool,4> wheelDown{};
     for(std::size_t i=0;i<4;++i)wheelDown[i]=key_down(wheelBindings[i].key) && input::matches(wheelBindings[i],modifiers);
     XINPUT_STATE padState{};
-    const bool padConnected=config.controllerEnabled && xinputGetState &&
+    const bool padConnected=(config.controllerEnabled || settings_ui::is_open()) && xinputGetState &&
         xinputGetState(config.controllerIndex,&padState)==ERROR_SUCCESS;
     const auto padButtons=padConnected?controller::held_buttons(padState.Gamepad,config.controllerTrigger):0u;
+    settings_ui::controller_input(padButtons,padConnected);
     std::array<bool,4> controllerWheelDown{};
     for(std::size_t i=0;i<4;++i)controllerWheelDown[i]=controller::down(config.controllerWheels[i],padButtons);
     int opening=-1;

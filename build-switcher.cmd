@@ -1,6 +1,7 @@
 @echo off
 setlocal
-set "AQS_DLL_NAME=ArrowQuickSwitch-0.6.2.dll"
+set "AQS_VERSION=0.6.2"
+set "AQS_DLL_NAME=ArrowQuickSwitch.dll"
 set "AQS_ICON_OBJECTS=icon_archive.obj item_icons.obj miniz_tinfl.obj"
 set "AQS_ICON_LIBS=d3d11.lib bcrypt.lib"
 if /i "%~1"=="--test" set "AQS_DLL_NAME=ArrowQuickSwitch-testing.dll"
@@ -39,6 +40,10 @@ if errorlevel 1 exit /b 1
 cl /nologo /guard:cf /GS /std:c++20 /EHsc /W4 /WX /MT ..\tests\binding_tests.cpp /Fe:binding_tests.exe
 if errorlevel 1 exit /b 1
 binding_tests.exe
+if errorlevel 1 exit /b 1
+cl /nologo /guard:cf /GS /std:c++20 /EHsc /W4 /WX /MT ..\tests\binding_capture_tests.cpp /Fe:binding_capture_tests.exe /link user32.lib
+if errorlevel 1 exit /b 1
+binding_capture_tests.exe
 if errorlevel 1 exit /b 1
 cl /nologo /guard:cf /GS /std:c++20 /EHsc /W4 /WX /MT ..\tests\window_input_tests.cpp /Fe:window_input_tests.exe /link user32.lib
 if errorlevel 1 exit /b 1
@@ -96,7 +101,7 @@ hook_compatibility_tests.exe
 if errorlevel 1 exit /b 1
 cl /nologo /guard:cf /GS /std:c++20 /EHsc /W4 /WX /MT /O2 /I..\third_party\minhook\include /c ..\src\indicator.cpp
 if errorlevel 1 exit /b 1
-cl /nologo /guard:cf /GS /std:c++20 /EHsc /W4 /WX /MT /O2 /LD /I. /I..\third_party\minhook\include ..\src\switcher.cpp indicator.obj settings_ui.obj imgui.obj imgui_draw.obj imgui_tables.obj imgui_widgets.obj imgui_impl_win32.obj imgui_impl_dx12.obj %AQS_ICON_OBJECTS% buffer.obj hook.obj trampoline.obj hde64.obj version.res /Fe:..\dist\%AQS_DLL_NAME% /link /GUARD:CF /DYNAMICBASE /HIGHENTROPYVA /NXCOMPAT dwmapi.lib %AQS_ICON_LIBS% user32.lib gdi32.lib ole32.lib windowscodecs.lib d3d12.lib dxgi.lib d3dcompiler.lib version.lib /IMPLIB:ArrowQuickSwitch-0.6.2.lib
+cl /nologo /guard:cf /GS /std:c++20 /EHsc /W4 /WX /MT /O2 /LD /I. /I..\third_party\minhook\include ..\src\switcher.cpp indicator.obj settings_ui.obj imgui.obj imgui_draw.obj imgui_tables.obj imgui_widgets.obj imgui_impl_win32.obj imgui_impl_dx12.obj %AQS_ICON_OBJECTS% buffer.obj hook.obj trampoline.obj hde64.obj version.res /Fe:..\dist\%AQS_DLL_NAME% /link /GUARD:CF /DYNAMICBASE /HIGHENTROPYVA /NXCOMPAT dwmapi.lib %AQS_ICON_LIBS% user32.lib gdi32.lib ole32.lib windowscodecs.lib d3d12.lib dxgi.lib d3dcompiler.lib version.lib /IMPLIB:ArrowQuickSwitch.lib
 if errorlevel 1 exit /b 1
 python ..\tools\verify_binary.py "..\dist\%AQS_DLL_NAME%"
 if errorlevel 1 exit /b 1

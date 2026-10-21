@@ -4,11 +4,11 @@ $ErrorActionPreference = 'Stop'
 $root = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $buildScript = Join-Path $root 'build-switcher.cmd'
 $buildText = Get-Content -LiteralPath $buildScript -Raw
-$versions = @([regex]::Matches($buildText, 'ArrowQuickSwitch-(\d+\.\d+\.\d+)\.dll') |
+$versions = @([regex]::Matches($buildText, 'AQS_VERSION=(\d+\.\d+\.\d+)') |
     ForEach-Object { $_.Groups[1].Value } | Select-Object -Unique)
 if ($versions.Count -ne 1) { throw 'Could not determine one release version from build-switcher.cmd.' }
 $version = $versions[0]
-$dllName = "ArrowQuickSwitch-$version.dll"
+$dllName = 'ArrowQuickSwitch.dll'
 
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 
@@ -49,13 +49,7 @@ try {
     foreach ($relative in $files.Keys) {
         $destination = Join-Path (Join-Path $stage 'ArrowQuickSwitch') $relative
         New-Item -ItemType Directory -Path (Split-Path -Parent $destination) -Force | Out-Null
-        if ($relative -eq 'README_INSTALL.txt') {
-            $instructions = (Get-Content -LiteralPath $files[$relative] -Raw) -replace
-                'ArrowQuickSwitch-\d+\.\d+\.\d+\.dll', $dllName
-            [System.IO.File]::WriteAllText($destination, $instructions, [System.Text.UTF8Encoding]::new($false))
-        } else {
-            Copy-Item -LiteralPath $files[$relative] -Destination $destination
-        }
+        Copy-Item -LiteralPath $files[$relative] -Destination $destination
     }
     [System.IO.Compression.ZipFile]::CreateFromDirectory(
         $stage, $temporaryArchive, [System.IO.Compression.CompressionLevel]::Optimal, $false)

@@ -2,6 +2,7 @@
 #include <windows.h>
 #include <d3d12.h>
 #include <filesystem>
+#include <cstdint>
 
 namespace arrow_switch::settings_ui {
 // Attach before the panel is opened so wheel/settings shortcuts receive events.
@@ -9,6 +10,8 @@ bool attach_input_window(HWND window);
 void ensure_input_window();
 void set_config(const std::filesystem::path& path);
 bool is_open();
+bool is_capturing();
+void controller_input(std::uint32_t buttons,bool connected);
 void toggle();
 void close();
 void set_enabled(bool value);

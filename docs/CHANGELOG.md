@@ -1,3 +1,12 @@
+# Unreleased
+
+- Keep the DLL filename stable as ArrowQuickSwitch.dll, with its version in Windows file details.
+
+- Click a binding to capture a keyboard key, mouse button or controller chord.
+- Capture modifiers, ignore activation inputs, and cancel with Escape or focus loss.
+- Keep manual binding entry available and validate conflicts before saving.
+- Capture controller bindings even when no controller wheels were enabled at startup.
+
 # 0.6.2
 
 - Track keyboard and mouse-button states from game-window events instead of

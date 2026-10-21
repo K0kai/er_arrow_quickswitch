@@ -6,6 +6,19 @@ The Behavior tab controls ammo filtering, sound, and the settings shortcut. Remo
 
 The mod creates its INI on first launch and adds missing options after updates. Keep your existing INI when updating. Appearance, audio, ammo filtering, and the settings shortcut also reload after external edits within about half a second while no wheel or equip request is active.
 
+## Rebinding controls
+
+In the Controls tab, click the current binding and press the desired key or mouse
+button. Hold Ctrl, Shift, Alt or Win first to record a keyboard chord. For a
+controller binding, hold the desired buttons together, then release them. Press
+Escape to cancel capture. Release inputs already held when capture starts.
+
+Choose **Clear** to disable a controller binding or the settings shortcut. Clearing
+the settings shortcut takes effect after saving and disables the panel until a
+shortcut is restored in the INI. Required keyboard wheel bindings cannot be cleared.
+**Edit binding names manually** retains text entry for advanced bindings, including
+Escape. Save validates the complete set of bindings before applying changes.
+
 ## Wheel appearance
 
 These keys belong in `[Theme]`. Colors use `#RRGGBB`. Positions and font sizes use reference pixels at 1080p. Opacity affects surfaces independently of text and artwork; sizes fit uniformly to the screen.
