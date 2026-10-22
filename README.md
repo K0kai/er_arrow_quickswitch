@@ -9,7 +9,7 @@ mouse, and release to equip. The center cancels; scroll to change pages. Optiona
 controller bindings use the right stick for selection. Equip ammo manually once
 in each slot you want to control.
 
-Press **F10** for the settings panel powered by **Dear ImGui**. It includes wheel
+Press **F10** or **Back+Start** on an XInput controller for the settings panel powered by **Dear ImGui**. It includes wheel
 and indicator appearance, keyboard/controller bindings, sound and ammo filtering.
 Appearance changes preview immediately; save to keep settings and apply controls
 and behavior. The INI is created on first launch and gains missing defaults after

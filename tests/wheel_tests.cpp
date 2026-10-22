@@ -16,6 +16,11 @@ int main(){
     items=wheel::eligible(arrows,100,0,AmmoSlot::arrow2);
     assert(items.size()==3 && items[0].id==100 && items[1].id==300 && items[2].id==400);
     assert(wheel::eligible(arrows,999,0,AmmoSlot::arrow1).empty());
+    for(const auto slot:{AmmoSlot::arrow1,AmmoSlot::arrow2}){
+        const auto emptyItems=wheel::eligible(arrows,empty_ammo_id,300,slot,true);
+        assert(emptyItems.size()==2 && emptyItems[0].id==100 && emptyItems[1].id==400);
+        assert(wheel::eligible(arrows,empty_ammo_id,300,slot,false).size()==emptyItems.size());
+    }
     assert(wheel::selection(0,0,4)==-1);
     assert(wheel::selection(60,0,4)==-1);
     assert(wheel::selection(90,0,4)==1);
@@ -36,6 +41,10 @@ int main(){
     assert(std::wstring(wheel::affinity(L"Frenzied Flame Arrow").label)==L"MADNESS");
     assert(std::wstring(wheel::affinity(L"Madness Bolt").label)==L"MADNESS");
     const std::vector<Arrow> bolts{{500,5,5,4,85},{600,6,4,5,85},{700,7,3,6,81},{800,8,3,7,86}};
+    for(const auto slot:{AmmoSlot::bolt1,AmmoSlot::bolt2}){
+        const auto emptyItems=wheel::eligible(bolts,empty_ammo_id,600,slot,true);
+        assert(emptyItems.size()==2 && emptyItems[0].id==500 && emptyItems[1].id==800);
+    }
     auto boltItems=wheel::eligible(bolts,500,600,AmmoSlot::bolt1);
     assert(boltItems.size()==2 && boltItems[0].id==500 && boltItems[1].id==800);
     boltItems=wheel::eligible(bolts,500,600,AmmoSlot::bolt1,true);

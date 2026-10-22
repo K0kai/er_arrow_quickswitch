@@ -36,8 +36,8 @@ bool manualBindings=false;
 std::atomic<bool> captureBlocked{false},padConnected{false};
 std::atomic<std::uint32_t> padButtons{0};
 std::wstring& capture_value(int target){
-    if(target<4)return controls.keyboard[static_cast<unsigned>(target)];
-    if(target<10)return controls.pad[static_cast<unsigned>(target-4)];
+    if(target<static_cast<int>(wheel_bindings::wheelCount))return controls.keyboard[static_cast<unsigned>(target)];
+    if(target<static_cast<int>(wheel_bindings::wheelCount+wheel_bindings::controllerCount))return controls.pad[static_cast<unsigned>(target-static_cast<int>(wheel_bindings::wheelCount))];
     return controls.shortcut;
 }
 void update_capture(){
@@ -120,7 +120,7 @@ bool binding(const char* label,std::wstring& value,int target,bool optional=fals
     ImGui::BeginDisabled(captureBlocked.load());
     if(ImGui::Button(displayed[0]?displayed.data():"None",ImVec2(155,0))){
         captureTarget=target;
-        capture.begin(target>=4 && target<10?binding_capture::Device::controller:binding_capture::Device::keyboard,
+        capture.begin(target>=static_cast<int>(wheel_bindings::wheelCount) && target<static_cast<int>(wheel_bindings::wheelCount+wheel_bindings::controllerCount)?binding_capture::Device::controller:binding_capture::Device::keyboard,
             window_input::snapshot(),padButtons.load());
         captureBlocked.store(true);notice.clear();
     }
@@ -193,23 +193,23 @@ void panel(){
             }
             if(ImGui::BeginTabItem("Controls")){
                 constexpr const char* keyboardLabels[]{"Arrow slot 1##key","Arrow slot 2##key","Bolt slot 1##key","Bolt slot 2##key"};
-                constexpr const char* padLabels[]{"Arrow slot 1##pad","Arrow slot 2##pad","Bolt slot 1##pad","Bolt slot 2##pad","Next page##pad","Previous page##pad"};
+                constexpr const char* padLabels[]{"Arrow slot 1##pad","Arrow slot 2##pad","Bolt slot 1##pad","Bolt slot 2##pad","Next page##pad","Previous page##pad","Settings panel##pad"};
                 ImGui::Checkbox("Edit binding names manually",&manualBindings);
                 ImGui::TextWrapped("Click a binding to record a key, mouse button or controller chord.");
                 ImGui::SeparatorText("Keyboard and mouse");
-                for(unsigned i=0;i<4;++i)changed|=binding(keyboardLabels[i],controls.keyboard[i],static_cast<int>(i));
+                for(unsigned i=0;i<wheel_bindings::wheelCount;++i)changed|=binding(keyboardLabels[i],controls.keyboard[i],static_cast<int>(i));
                 ImGui::TextWrapped("Examples: Key1, E, Ctrl+E, Mouse4. Hold to open; release to select.");
                 ImGui::SeparatorText("Controller");
-                for(unsigned i=0;i<6;++i)changed|=binding(padLabels[i],controls.pad[i],static_cast<int>(i+4),true);
+                for(unsigned i=0;i<wheel_bindings::controllerCount;++i)changed|=binding(padLabels[i],controls.pad[i],static_cast<int>(i+wheel_bindings::wheelCount),true);
                 ImGui::TextWrapped("Use A, B, X, Y, LB, RB, LT, RT, LS, RS, Back, Start, or DPadUp/Down/Left/Right. Join buttons with + for a chord. None disables a binding. Names use Xbox notation.");
                 ImGui::TextWrapped("Bindings apply after saving, without restarting the game.");
                 ImGui::EndTabItem();
             }
             if(ImGui::BeginTabItem("Behavior")){
                 ImGui::Checkbox("Edit binding names manually",&manualBindings);
-                changed|=binding("Settings shortcut",controls.shortcut,10,true);
-                ImGui::TextWrapped("Examples: F10, Ctrl+F10. None or an empty value disables the panel.");
-                ImGui::TextWrapped("After saving a removed shortcut, re-enable the panel by setting SettingsKey in the INI.");
+                changed|=binding("Keyboard settings shortcut",controls.shortcut,static_cast<int>(wheel_bindings::wheelCount+wheel_bindings::controllerCount),true);
+                ImGui::TextWrapped("Examples: F10, Ctrl+F10. The panel remains available while either keyboard or controller shortcut is set.");
+                ImGui::TextWrapped("If both shortcuts are cleared, restore SettingsKey or SettingsButton in the INI to re-enable the panel.");
                 ImGui::Separator();
                 changed|=ImGui::Checkbox("Limit each wheel to its equipped ammo type",&sameFamily);
                 changed|=ImGui::Checkbox("Opening and hover sounds",&audio);changed|=slider("Hover sound interval",hoverCooldown,50,300,"%d ms");
@@ -233,10 +233,11 @@ void panel(){
             ok=WritePrivateProfileStringW(L"Audio",L"Enabled",audio?L"1":L"0",file.c_str())!=0 && ok;
             ok=WritePrivateProfileStringW(L"Audio",L"HoverCooldownMs",std::to_wstring(hoverCooldown).c_str(),file.c_str())!=0 && ok;
             ok=WritePrivateProfileStringW(L"Controls",L"SettingsKey",controls.shortcut.c_str(),file.c_str())!=0 && ok;
-            for(unsigned i=0;i<4;++i)ok=WritePrivateProfileStringW(L"Controls",wheel_bindings::keyboardKeys[i],controls.keyboard[i].c_str(),file.c_str())!=0 && ok;
-            for(unsigned i=0;i<6;++i)ok=WritePrivateProfileStringW(L"Controller",wheel_bindings::controllerKeys[i],controls.pad[i].c_str(),file.c_str())!=0 && ok;
+            for(unsigned i=0;i<wheel_bindings::wheelCount;++i)ok=WritePrivateProfileStringW(L"Controls",wheel_bindings::keyboardKeys[i],controls.keyboard[i].c_str(),file.c_str())!=0 && ok;
+            for(unsigned i=0;i<wheel_bindings::controllerCount;++i)ok=WritePrivateProfileStringW(L"Controller",wheel_bindings::controllerKeys[i],controls.pad[i].c_str(),file.c_str())!=0 && ok;
             notice=ok?"Saved.":"Could not save the INI. Check that the folder is writable.";if(ok)dirty=false;
-            if(ok && !shortcut.key){panelEnabled.store(false);visible.store(false);}
+            if(ok && !shortcut.key){controller::Binding padShortcut;controller::parse(controls.pad[wheel_bindings::settingsIndex],padShortcut);
+                if(!padShortcut.buttons){panelEnabled.store(false);visible.store(false);}}
             }
         }
         ImGui::SameLine();if(ImGui::Button("Revert")){load();indicator::configure(editing);}

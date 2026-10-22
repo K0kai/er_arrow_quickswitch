@@ -1,8 +1,8 @@
 # Customization
 
-Open a wheel once, release it, then press **F10** during gameplay. The settings panel previews your last wheel. Wheel and Indicator changes preview immediately; **Save changes** keeps them, **Revert** restores saved values, and closing discards unsaved edits. The panel does not pause the game.
+Open a wheel once, release it, then press **F10** or **Back+Start** on a controller during gameplay. The settings panel previews your last wheel. Wheel and Indicator changes preview immediately; **Save changes** keeps them, **Revert** restores saved values, and closing discards unsaved edits. The panel does not pause the game.
 
-The Behavior tab controls ammo filtering, sound, and the settings shortcut. Removing the shortcut and saving closes and disables the panel. Restore `[Controls] SettingsKey=F10` (or a chord such as `Ctrl+F10`) in the INI to enable it again. `None`, `0`, and blank disable it. The settings shortcut reloads live. The Controls tab edits keyboard and controller wheel bindings and controller paging. Save to apply them without restarting.
+The Behavior tab controls ammo filtering, sound, and the keyboard settings shortcut. The Controls tab edits keyboard and controller wheel bindings, controller paging, and the controller settings shortcut. Clearing both settings shortcuts and saving closes and disables the panel. Restore `[Controls] SettingsKey=F10` or `[Controller] SettingsButton=Back+Start` in the INI to enable it again. `None` disables a controller shortcut; `None`, `0`, or blank disables the keyboard shortcut. Shortcuts reload live.
 
 The mod creates its INI on first launch and adds missing options after updates. Keep your existing INI when updating. Appearance, audio, ammo filtering, and the settings shortcut also reload after external edits within about half a second while no wheel or equip request is active.
 
@@ -13,8 +13,8 @@ button. Hold Ctrl, Shift, Alt or Win first to record a keyboard chord. For a
 controller binding, hold the desired buttons together, then release them. Press
 Escape to cancel capture. Release inputs already held when capture starts.
 
-Choose **Clear** to disable a controller binding or the settings shortcut. Clearing
-the settings shortcut takes effect after saving and disables the panel until a
+Choose **Clear** to disable a controller binding or the keyboard settings shortcut. Clearing
+both settings shortcuts takes effect after saving and disables the panel until one
 shortcut is restored in the INI. Required keyboard wheel bindings cannot be cleared.
 **Edit binding names manually** retains text entry for advanced bindings, including
 Escape. Save validates the complete set of bindings before applying changes.

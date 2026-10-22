@@ -97,6 +97,29 @@ int main() {
         assert(!game::revalidate_slot(a,s,target,slot));
         put(player,id_offset(slot),s.slotIds[i]);
     }
+    // Empty slots accept either family but still require stable slot fields,
+    // a live owned candidate, and an unchanged paired slot.
+    for(std::size_t i=0;i<4;++i){
+        const auto slot=static_cast<AmmoSlot>(i);
+        const auto oldId=s.slotIds[i],oldHandle=s.slotHandles[i],oldIndex=s.slotIndices[i];
+        s.slotIds[i]=s.slotHandles[i]=s.slotIndices[i]=0xFFFFFFFFu;
+        put(player,id_offset(slot),s.slotIds[i]);
+        put(player,handle_offset(slot),s.slotHandles[i]);
+        put(player,index_offset(slot),s.slotIndices[i]);
+        assert(game::empty_slot(s,slot) && game::current_matches_slot(s,slot));
+        const auto target=i<2?ammo[8]:ammo[9];
+        assert(game::revalidate_slot(a,s,target,slot));
+        ammoEntries[target.index].count=0;
+        assert(!game::revalidate_slot(a,s,target,slot));
+        ammoEntries[target.index].count=target.count;
+        put(player,index_offset(slot),oldIndex);
+        assert(!game::revalidate_slot(a,s,target,slot));
+        s.slotIndices[i]=oldIndex;
+        assert(!game::current_matches_slot(s,slot));
+        s.slotIds[i]=oldId;s.slotHandles[i]=oldHandle;
+        put(player,id_offset(slot),oldId);put(player,handle_offset(slot),oldHandle);
+        assert(game::current_matches_slot(s,slot));
+    }
     // Reforged may retain a stale equipped handle in the two secondary slots,
     // while the ID and index still identify the correct live inventory entry.
     for(const auto slot:{AmmoSlot::arrow2,AmmoSlot::bolt2}){

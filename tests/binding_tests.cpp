@@ -57,6 +57,9 @@ int main() {
         values.pad[5]=L"DPadLeft";assert(!wheel_bindings::validate(values));
         values.pad[0]=L"bad button";assert(wheel_bindings::validate(values));
         values.pad[0]=L"None";values.shortcut=L"None";assert(!wheel_bindings::validate(values));
+        values.pad[6]=L"RB";assert(wheel_bindings::validate(values));
+        values.pad[6]=L"None";assert(!wheel_bindings::validate(values));
+        values.pad[6]=L"Back+Start";values.pad[0]=L"Back";assert(wheel_bindings::validate(values));
     }
     Edge edge;
     assert(!edge.sample(true,true)); // do not trigger a key held during initialization

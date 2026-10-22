@@ -2,6 +2,8 @@
 [i]Quick-switch arrows and bolts with radial wheels, no inventory needed[/i]
 [b]Version 0.6.2[/b][/center]
 
+[center][url=https://github.com/K0kai/er_arrow_quickswitch]Source code on GitHub[/url][/center]
+
 [line]
 
 [size=4][b]What it does[/b][/size]
@@ -14,7 +16,7 @@ Hold a key, point the mouse toward the ammo you want, and release. That's it. Ar
 [*][b]Info on each wedge:[/b] name in your game language, quantity, item artwork, and damage/status badges. Multiple effects can appear together.[/*]
 [*][b]Many arrows?[/b] More than eight types are split into pages. Hold the wheel key and scroll [b]up[/b] for the next page, [b]down[/b] for the previous one.[/*]
 [*][b]Works with modded ammo:[/b] names and effects are read from the running game, so there are no fixed ammo ID lists and no Convergence-specific tables.[/*]
-[*][b]Controller (optional):[/b] hold a bound button, aim with the right stick, release. Page with [b]RB[/b]/[b]LB[/b].[/*]
+[*][b]Controller (optional):[/b] hold a bound button, aim with the right stick, release. Page with [b]RB[/b]/[b]LB[/b]. Press [b]Back+Start[/b] to open or close settings.[/*]
 [/list]
 
 [line]
@@ -64,17 +66,17 @@ Nothing needs to be copied into the Elden Ring folder.
 
 [size=4][b]Configuration[/b][/size]
 
-Press [b]F10[/b] during gameplay to open the settings panel, powered by [b]Dear ImGui[/b]. Open a wheel once to populate its preview.
+Press [b]F10[/b] or [b]Back+Start[/b] on a controller during gameplay to open the settings panel, powered by [b]Dear ImGui[/b]. Open a wheel once to populate its preview.
 
 [list]
 [*][b]Wheel and indicator:[/b] customize colors, transparency, size, position, text, icons, selection lighting, and decorative trim. The ammo indicator can also be turned off.[/*]
-[*][b]Controls:[/b] change keyboard and controller bindings for all four wheels and controller paging. Click a binding and press the desired key or mouse button; hold controller buttons together and release to capture a chord. Escape cancels. Manual name entry is also available. Keyboard chords such as [font=Courier New]Ctrl+E[/font] and controller chords such as [font=Courier New]LT+DPadUp[/font] are supported.[/*]
+[*][b]Controls:[/b] change keyboard and controller bindings for all four wheels, controller paging, and the settings panel. Click a binding and press the desired key or mouse button; hold controller buttons together and release to capture a chord. Escape cancels. Manual name entry is also available. Keyboard chords such as [font=Courier New]Ctrl+E[/font] and controller chords such as [font=Courier New]LT+DPadUp[/font] are supported.[/*]
 [*][b]Behavior:[/b] toggle sounds and restrict each wheel to its equipped ammo type, if preferred.[/*]
 [/list]
 
 Appearance changes preview immediately. Save to keep them and apply controls and behavior without restarting. Controller buttons still reach the game, so choose bindings that avoid gameplay conflicts.
 
-The settings shortcut can also be changed or removed. Removing it disables the panel until you set a shortcut again under [font=Courier New][Controls] SettingsKey[/font] in the INI.
+The keyboard and controller settings shortcuts can be changed or removed independently. Clearing both disables the panel until you restore [font=Courier New][Controls] SettingsKey[/font] or [font=Courier New][Controller] SettingsButton[/font] in the INI.
 
 The mod creates [font=Courier New]dist/ArrowQuickSwitch.ini[/font] on first launch. [b]Keep your existing INI when updating.[/b] New settings are added automatically. The included [font=Courier New]CUSTOMIZATION.md[/font] explains the available appearance options and alternate icon source folders. For troubleshooting, [font=Courier New]DiagnosticKey[/font] defaults to [b]F8[/b].
 
@@ -85,7 +87,7 @@ Arrow and bolt artwork is loaded from installed game/mod files at runtime. Missi
 [size=4][b]Limitations[/b][/size]
 
 [list]
-[*]An empty or unrecognized slot needs ammo equipped manually once.[/*]
+[*]Empty-slot equipping is being tested. Unrecognized or inconsistent equipment still needs ammo equipped manually.[/*]
 [*]Effect icons follow the active weapon and linked status data. Effects that another mod implements through bullets or other systems may be missed or need extra icon support.[/*]
 [/list]
 
@@ -106,6 +108,3 @@ AI tools helped investigate the game's data, write and revise code, run checks, 
 Effect icons are derived from Elden Ring's in-game UI assets. This is an unofficial fan mod, not affiliated with or endorsed by FromSoftware, Bandai Namco, The Convergence team, or other mod authors.
 
 The DLL filename stays ArrowQuickSwitch.dll across updates. Set your launcher profile to this filename once. Check its version by hovering over it in Windows Explorer or opening Properties > Details.
-
-[b]Permissions[/b]
-You may use, modify, and redistribute this mod with credit to K0kai and a link to the original repository. Commercial use or monetization requires prior written permission, including Nexus Donation Points and donations or advertising tied to the mod. See the repository LICENSE for full terms. Third-party components retain their own licenses.

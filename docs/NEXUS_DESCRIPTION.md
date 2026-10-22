@@ -2,6 +2,8 @@
 <p align="center"><em>Quick-switch arrows and bolts with radial wheels, no inventory needed</em></p>
 <p align="center"><strong>Version 0.6.2</strong></p>
 
+<p align="center"><a href="https://github.com/K0kai/er_arrow_quickswitch">Source code on GitHub</a></p>
+
 ---
 
 ## What it does
@@ -13,7 +15,7 @@ Hold a key, point the mouse toward the ammo you want, and release. That's it. Ar
 - **Info on each wedge:** name in your game language, quantity, item artwork, and damage/status badges. Multiple effects can appear together.
 - **Many arrows?** More than eight types are split into pages. Hold the wheel key and scroll **up** for the next page, **down** for the previous one.
 - **Works with modded ammo:** names and effects are read from the running game, so there are no fixed ammo ID lists and no Convergence-specific tables.
-- **Controller (optional):** hold a bound button, aim with the right stick, release. Page with **RB**/**LB**.
+- **Controller (optional):** hold a bound button, aim with the right stick, release. Page with **RB**/**LB**. Press **Back+Start** to open or close settings.
 
 ---
 
@@ -64,15 +66,15 @@ Nothing needs to be copied into the Elden Ring folder.
 
 ## Configuration
 
-Press **F10** during gameplay to open the settings panel, powered by **Dear ImGui**. Open a wheel once to populate its preview.
+Press **F10** or **Back+Start** on a controller during gameplay to open the settings panel, powered by **Dear ImGui**. Open a wheel once to populate its preview.
 
 - **Wheel and indicator:** customize colors, transparency, size, position, text, icons, selection lighting, and decorative trim. The ammo indicator can also be turned off.
-- **Controls:** change keyboard and controller bindings for all four wheels and controller paging. Click a binding and press the desired key or mouse button; hold controller buttons together and release to capture a chord. Escape cancels. Manual name entry is also available. Keyboard chords such as `Ctrl+E` and controller chords such as `LT+DPadUp` are supported.
+- **Controls:** change keyboard and controller bindings for all four wheels, controller paging, and the settings panel. Click a binding and press the desired key or mouse button; hold controller buttons together and release to capture a chord. Escape cancels. Manual name entry is also available. Keyboard chords such as `Ctrl+E` and controller chords such as `LT+DPadUp` are supported.
 - **Behavior:** toggle sounds and restrict each wheel to its equipped ammo type, if preferred.
 
 Appearance changes preview immediately. Save to keep them and apply controls and behavior without restarting. Controller buttons still reach the game, so choose bindings that avoid gameplay conflicts.
 
-The settings shortcut can also be changed or removed. Removing it disables the panel until you set a shortcut again under `[Controls] SettingsKey` in the INI.
+The keyboard and controller settings shortcuts can be changed or removed independently. Clearing both disables the panel until you restore `[Controls] SettingsKey` or `[Controller] SettingsButton` in the INI.
 
 The mod creates `dist/ArrowQuickSwitch.ini` on first launch. **Keep your existing INI when updating.** New settings are added automatically. The included `CUSTOMIZATION.md` explains the available appearance options and alternate icon source folders. For troubleshooting, `DiagnosticKey` defaults to **F8**.
 
@@ -82,7 +84,7 @@ Arrow and bolt artwork is loaded from installed game/mod files at runtime. Missi
 
 ## Limitations
 
-- An empty or unrecognized slot needs ammo equipped manually once.
+- Empty-slot equipping is being tested. Unrecognized or inconsistent equipment still needs ammo equipped manually.
 - Effect icons follow the active weapon and linked status data. Effects that another mod implements through bullets or other systems may be missed or need extra icon support.
 
 ---
@@ -100,7 +102,3 @@ AI tools helped investigate the game's data, write and revise code, run checks, 
 Effect icons are derived from Elden Ring's in-game UI assets. This is an unofficial fan mod, not affiliated with or endorsed by FromSoftware, Bandai Namco, The Convergence team, or other mod authors.
 
 The DLL filename stays `ArrowQuickSwitch.dll` across updates. Set your launcher profile to this filename once. Check its version by hovering over it in Windows Explorer or opening Properties > Details.
-
-## Permissions
-
-You may use, modify, and redistribute this mod with credit to K0kai and a link to the original repository. Commercial use or monetization requires prior written permission, including Nexus Donation Points and donations or advertising tied to the mod. See the repository LICENSE for full terms. Third-party components retain their own licenses.

@@ -3,6 +3,7 @@
 #include <cstdint>
 
 namespace arrow_switch {
+constexpr std::uint32_t empty_ammo_id=0xFFFFFFFFu;
 enum class AmmoSlot : std::uint8_t { arrow1,arrow2,bolt1,bolt2 };
 constexpr std::size_t slot_index(AmmoSlot slot){return static_cast<std::size_t>(slot);}
 // Confirmed from live 1.17.1 equipment data: arrow1, bolt1, arrow2, bolt2.

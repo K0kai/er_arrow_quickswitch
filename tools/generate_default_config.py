@@ -16,8 +16,8 @@ DEFAULT_INI = """[Controls]
 ; For a side mouse button use 5 (Mouse4) or 6 (Mouse5).
 ; The mod does not suppress these keys' existing game bindings.
 DiagnosticKey=119
-; Open the in-game settings panel during gameplay. None or blank disables it.
-; Restore a binding here to enable the panel again. This shortcut reloads live.
+; Open the in-game settings panel during gameplay. None or blank disables the keyboard shortcut.
+; Restore this key or [Controller] SettingsButton to enable the panel again.
 SettingsKey=F10
 ; Hold to open the arrow wheel, move the mouse, release to equip.
 Arrow1WheelKey=Key1
@@ -39,6 +39,8 @@ Bolt2WheelButton=None
 ; Set either page button to None if it conflicts with a wheel chord.
 NextPageButton=RB
 PreviousPageButton=LB
+; Press Back+Start to open or close settings. None disables the controller shortcut.
+SettingsButton=Back+Start
 RightStickDeadzonePercent=25
 TriggerThreshold=180
 

@@ -63,7 +63,7 @@ struct Config {
     std::array<std::wstring,3> otherWheelTexts;
     std::array<controller::Binding,4> controllerWheels{};
     std::array<std::wstring,4> controllerWheelTexts;
-    controller::Binding controllerNextPage{},controllerPreviousPage{};
+    controller::Binding controllerNextPage{},controllerPreviousPage{},controllerSettings{};
     unsigned controllerIndex=0,controllerDeadzone=25,controllerTrigger=180;
     bool controllerEnabled=false;
     unsigned settle=150, timeout=3000;
@@ -128,7 +128,9 @@ bool load_config() {
     for(std::size_t i=0;i<config.controllerWheels.size();++i)
         if(!controllerBinding(controllerKeys[i],L"None",config.controllerWheels[i],&config.controllerWheelTexts[i]))return false;
     if(!controllerBinding(L"NextPageButton",L"RB",config.controllerNextPage) ||
-       !controllerBinding(L"PreviousPageButton",L"LB",config.controllerPreviousPage))return false;
+       !controllerBinding(L"PreviousPageButton",L"LB",config.controllerPreviousPage) ||
+       !controllerBinding(L"SettingsButton",L"Back+Start",config.controllerSettings))return false;
+    config.controllerEnabled=config.controllerSettings.buttons!=0;
     const auto controllerIndex=get(L"Controller",L"ControllerIndex",0);
     const auto deadzone=get(L"Controller",L"RightStickDeadzonePercent",25);
     const auto trigger=get(L"Controller",L"TriggerThreshold",180);
@@ -146,6 +148,10 @@ bool load_config() {
            controller::down(config.controllerPreviousPage,config.controllerWheels[i].buttons))return false;
     }
     if(controller::ambiguous(config.controllerNextPage,config.controllerPreviousPage))return false;
+    for(const auto& wheelButton:config.controllerWheels)
+        if(controller::ambiguous(wheelButton,config.controllerSettings))return false;
+    if(controller::ambiguous(config.controllerNextPage,config.controllerSettings) ||
+       controller::ambiguous(config.controllerPreviousPage,config.controllerSettings))return false;
     config.settle=get(L"Switching",L"MouseReleaseDelayMs",150);
     config.timeout=get(L"Switching",L"RequestTimeoutMs",3000);
     config.deferMouse=get(L"Switching",L"DeferWhileMouseHeld",1)!=0;
@@ -329,32 +335,38 @@ void publish_wheel_page(const std::vector<indicator::WheelItem>& items,std::size
     if(pages>1)label+=L"  " + std::to_wstring(page+1) + L"/" + std::to_wstring(pages);
     indicator::publish_wheel(visible,selected,true,label.c_str());
 }
-void update(void* hud) {
-    static bool first=true;
-    static input::Edge diagnosticEdge,settingsEdge;
-    static bool initialSnapshot=false;
-    static std::array<bool,4> wheelWasDown{};
-    static std::array<bool,4> controllerWheelWasDown{};
-    static std::uint32_t previousPadButtons{};
-    static bool wheelOpen=false;
-    static bool wheelController=false;
-    static AmmoSlot wheelSlot=AmmoSlot::arrow1,pendingSlot=AmmoSlot::arrow1;
-    static std::vector<Arrow> wheelArrows;
-    static std::vector<indicator::WheelItem> wheelItems;
-    static float wheelX=0,wheelY=0;
-    static int wheelSelected=-1;
-    static std::uint64_t lastHoverSound{};
-    static std::size_t wheelPage=0;
-    static std::uint32_t pendingWheel=0xFFFFFFFFu;
-    static std::uint64_t pendingSince{};
-    if (first) { first=false; log("Equipment HUD hook is executing."); }
-    const auto now=GetTickCount64();
-    static std::uint64_t lastInputCheck=0;
-    if(now-lastInputCheck>=500){lastInputCheck=now;settings_ui::ensure_input_window();}
-    // Apply safe customization changes between wheel interactions. The renderer
-    // receives a snapshot and consumes it on its own thread between frames.
-    static std::uint64_t lastThemeCheck=0;
-    static std::filesystem::file_time_type themeWrite{};
+std::vector<indicator::WheelItem> make_wheel_items(const game::Snapshot& snapshot,
+    const std::vector<Arrow>& arrows,AmmoSlot slot,std::size_t slotIndex,std::uintptr_t effectParam){
+    std::vector<indicator::WheelItem> items;
+    items.reserve(arrows.size());
+    for(const auto& arrow:arrows){
+        auto name=arrow_name(namesStatic,arrow.id);
+        if(name.empty())name=(slotIndex<2?L"Arrow ":L"Bolt ")+std::to_wstring(arrow.id);
+        effects::Evidence evidence;
+        if(read_effects(snapshot.param,effectParam,arrow.id,evidence)){
+            const auto mask=effects::classify(evidence);
+            const auto label=mask?effects::label(mask):std::wstring(L"UNCLASSIFIED");
+            items.push_back({std::move(name),arrow.count,L'\u2191',effects::accent(mask),label,mask});
+            if(std::popcount(static_cast<unsigned>(mask))>1)
+                log("WHEEL ammo id=%u multiple effects: %ls.",arrow.id,label.c_str());
+        }else{
+            const auto hint=wheel::affinity(name);
+            const auto effect=std::wstring(hint.label)==L"ARROW" && slotIndex>=2?L"BOLT":hint.label;
+            items.push_back({std::move(name),arrow.count,hint.badge,hint.color,effect,0});
+            log("WHEEL %ls: damage/status data unavailable for ammo id=%u; using name hint.",slot_label(slot),arrow.id);
+        }
+    }
+    for(std::size_t i=0;i<items.size();++i){
+        std::uint16_t iconId{};
+        const auto row=game::row(snapshot.param,arrows[i].id);
+        if(row && game::read(row+0xBE,iconId))items[i].iconId=iconId;
+    }
+    return items;
+}
+void reload_customization(std::uint64_t now,bool wheelOpen,std::uint32_t pendingWheel,
+    std::uint64_t& lastThemeCheck,std::filesystem::file_time_type& themeWrite,
+    input::Edge& settingsEdge,std::array<bool,4>& wheelWasDown,
+    std::array<bool,4>& controllerWheelWasDown,std::uint32_t& previousPadButtons){
     if(!wheelOpen && pendingWheel==0xFFFFFFFFu && now-lastThemeCheck>=500){
         lastThemeCheck=now;
         const auto path=folder/L"ArrowQuickSwitch.ini";
@@ -373,10 +385,13 @@ void update(void* hud) {
             else{
                 input::Binding next;input::parse_optional(bindings.shortcut,next);
                 if(next!=config.settingsKey){config.settingsKey=next;settingsEdge.held=true;}
-                settings_ui::set_enabled(next.key!=0);
+                controller::Binding nextController;
+                controller::parse(bindings.pad[wheel_bindings::settingsIndex],nextController);
+                settings_ui::set_enabled(next.key!=0 || nextController.buttons!=0);
                 input::parse(bindings.keyboard[0],config.wheel);
                 for(unsigned i=1;i<4;++i)input::parse(bindings.keyboard[i],config.otherWheels[i-1]);
-                config.controllerEnabled=false;
+                config.controllerSettings=nextController;
+                config.controllerEnabled=nextController.buttons!=0;
                 for(unsigned i=0;i<4;++i){
                     controller::parse(bindings.pad[i],config.controllerWheels[i]);
                     config.controllerEnabled|=config.controllerWheels[i].buttons!=0;
@@ -391,93 +406,65 @@ void update(void* hud) {
         }
     }
 
-    DWORD pid{}; GetWindowThreadProcessId(GetForegroundWindow(),&pid);
-    const auto inputState=window_input::snapshot();
-    const auto key_down=[&](int key){return inputState.down(key);};
-    const bool focused=pid==GetCurrentProcessId() && inputState.focused;
-    const unsigned modifiers=(key_down(VK_CONTROL)?input::ctrl:0u) | (key_down(VK_SHIFT)?input::shift:0u) |
-        (key_down(VK_MENU)?input::alt:0u) | ((key_down(VK_LWIN)||key_down(VK_RWIN))?input::win:0u);
-    const bool diagPressed=diagnosticEdge.sample(key_down(config.diagnostic.key),input::matches(config.diagnostic,modifiers),focused);
-    const bool gameplay=focused && game::normal_gameplay(addresses,hud);
-    if(settingsEdge.sample(key_down(config.settingsKey.key),input::matches(config.settingsKey,modifiers),focused) && gameplay && !settings_ui::is_capturing()){
-        settings_ui::toggle();
-        if(wheelOpen){wheelOpen=false;rawWheelOpen.store(false);indicator::publish_wheel({},-1,false);}
-        pendingWheel=0xFFFFFFFFu;
-    }
-    if(!focused || !gameplay)settings_ui::close();
-    const std::array<input::Binding,4> wheelBindings{config.wheel,config.otherWheels[0],config.otherWheels[1],config.otherWheels[2]};
-    std::array<bool,4> wheelDown{};
-    for(std::size_t i=0;i<4;++i)wheelDown[i]=key_down(wheelBindings[i].key) && input::matches(wheelBindings[i],modifiers);
-    XINPUT_STATE padState{};
-    const bool padConnected=(config.controllerEnabled || settings_ui::is_open()) && xinputGetState &&
-        xinputGetState(config.controllerIndex,&padState)==ERROR_SUCCESS;
-    const auto padButtons=padConnected?controller::held_buttons(padState.Gamepad,config.controllerTrigger):0u;
-    settings_ui::controller_input(padButtons,padConnected);
-    std::array<bool,4> controllerWheelDown{};
-    for(std::size_t i=0;i<4;++i)controllerWheelDown[i]=controller::down(config.controllerWheels[i],padButtons);
-    int opening=-1;
-    bool openingController=false;
-    if(!wheelOpen && !settings_ui::is_open() && gameplay && enabled.load() && indicatorSettings.enabled)
-        for(std::size_t i=0;i<4;++i){
-            if(wheelDown[i]&&!wheelWasDown[i]){opening=static_cast<int>(i);break;}
-            if(controllerWheelDown[i]&&!controllerWheelWasDown[i]){
-                opening=static_cast<int>(i);openingController=true;break;
-            }
+}
+void resolve_pending_switch(void* hud,const window_input::State& inputState,bool gameplay,
+    std::uint64_t now,std::uint32_t& pendingWheel,AmmoSlot pendingSlot,std::uint64_t pendingSince){
+    if(pendingWheel!=0xFFFFFFFFu){
+        const bool buttonsDown=inputState.down(VK_LBUTTON)||inputState.down(VK_RBUTTON);
+        if(!gameplay || !enabled.load() || now-pendingSince>config.timeout)pendingWheel=0xFFFFFFFFu;
+        else if(!config.deferMouse || !buttonsDown && now-pendingSince>=config.settle){
+            const auto target=pendingWheel;pendingWheel=0xFFFFFFFFu;
+            switch_ammo(pendingSlot,hud,target);
         }
+    }
+}
+struct WheelState {
+    std::array<bool,4> wheelWasDown{},controllerWheelWasDown{};
+    std::uint32_t previousPadButtons{};
+    bool wheelOpen=false,wheelController=false;
+    AmmoSlot wheelSlot=AmmoSlot::arrow1,pendingSlot=AmmoSlot::arrow1;
+    std::vector<Arrow> wheelArrows;
+    std::vector<indicator::WheelItem> wheelItems;
+    float wheelX=0,wheelY=0;
+    int wheelSelected=-1;
+    std::uint64_t lastHoverSound{};
+    std::size_t wheelPage=0;
+    std::uint32_t pendingWheel=0xFFFFFFFFu;
+    std::uint64_t pendingSince{};
+};
+void open_wheel(WheelState& state,int opening,bool openingController){
     if(opening>=0) {
-        wheelController=openingController;
-        wheelSlot=static_cast<AmmoSlot>(opening);
-        activeIndicatorSlot=wheelSlot;
+        state.wheelController=openingController;
+        state.wheelSlot=static_cast<AmmoSlot>(opening);
+        activeIndicatorSlot=state.wheelSlot;
         game::Snapshot current;
         const bool snap=game::snapshot(addresses,current);
-        if(snap && game::current_matches_slot(current,wheelSlot)) {
-            const auto selectedIndex=slot_index(wheelSlot);
-            const auto* equipped=game::equipped_entry(current,wheelSlot);
+        if(snap && game::current_matches_slot(current,state.wheelSlot)) {
+            const auto selectedIndex=slot_index(state.wheelSlot);
+            const auto* equipped=game::equipped_entry(current,state.wheelSlot);
             if(equipped && equipped->handle!=current.slotHandles[selectedIndex])
                 log("WHEEL %ls: secondary equipped handle is stale; ID and inventory index match (equipped=%u inventory=%u).",
-                    slot_label(wheelSlot),current.slotHandles[selectedIndex],equipped->handle);
+                    slot_label(state.wheelSlot),current.slotHandles[selectedIndex],equipped->handle);
             const auto effectParam=game::effect_param(addresses.params);
-            log("WHEEL %ls: live status-effect parameter %s.",slot_label(wheelSlot),effectParam?"found":"unavailable");
-            wheelArrows=wheel::eligible(current.arrows,current.slotIds[selectedIndex],
-                current.slotIds[slot_index(peer_slot(wheelSlot))],wheelSlot,config.cycleSameFamily);
-            wheelItems.clear();wheelItems.reserve(wheelArrows.size());
-            for(const auto& arrow:wheelArrows){
-                auto name=arrow_name(namesStatic,arrow.id);
-                if(name.empty())name=(selectedIndex<2?L"Arrow ":L"Bolt ")+std::to_wstring(arrow.id);
-                effects::Evidence evidence;
-                if(read_effects(current.param,effectParam,arrow.id,evidence)){
-                    const auto mask=effects::classify(evidence);
-                    const auto label=mask?effects::label(mask):std::wstring(L"UNCLASSIFIED");
-                    wheelItems.push_back({std::move(name),arrow.count,L'\u2191',effects::accent(mask),label,mask});
-                    if(std::popcount(static_cast<unsigned>(mask))>1)
-                        log("WHEEL ammo id=%u multiple effects: %ls.",arrow.id,label.c_str());
-                }else{
-                    const auto hint=wheel::affinity(name);
-                    const auto effect=std::wstring(hint.label)==L"ARROW" && selectedIndex>=2?L"BOLT":hint.label;
-                    wheelItems.push_back({std::move(name),arrow.count,hint.badge,hint.color,effect,0});
-                    log("WHEEL %ls: damage/status data unavailable for ammo id=%u; using name hint.",slot_label(wheelSlot),arrow.id);
-                }
-            }
-            for(std::size_t i=0;i<wheelItems.size();++i){
-                std::uint16_t iconId{};
-                const auto row=game::row(current.param,wheelArrows[i].id);
-                if(row && game::read(row+0xBE,iconId))wheelItems[i].iconId=iconId;
-            }
-            wheelOpen=!wheelItems.empty();wheelX=wheelY=0;wheelSelected=-1;wheelPage=0;
-            rawDx.store(0);rawDy.store(0);rawPageSteps.store(0);rawWheelOpen.store(wheelOpen&&!wheelController);
-            if(wheelOpen) {
-                publish_wheel_page(wheelItems,wheelPage,wheelSelected,wheelSlot);
+            log("WHEEL %ls: live status-effect parameter %s.",slot_label(state.wheelSlot),effectParam?"found":"unavailable");
+            state.wheelArrows=wheel::eligible(current.arrows,current.slotIds[selectedIndex],
+                current.slotIds[slot_index(peer_slot(state.wheelSlot))],state.wheelSlot,config.cycleSameFamily);
+            state.wheelItems=make_wheel_items(current,state.wheelArrows,state.wheelSlot,selectedIndex,effectParam);
+            state.wheelOpen=!state.wheelItems.empty();state.wheelX=state.wheelY=0;state.wheelSelected=-1;state.wheelPage=0;
+            rawDx.store(0);rawDy.store(0);rawPageSteps.store(0);rawWheelOpen.store(state.wheelOpen&&!state.wheelController);
+            if(state.wheelOpen) {
+                publish_wheel_page(state.wheelItems,state.wheelPage,state.wheelSelected,state.wheelSlot);
                 play_wheel_sound(false);
             }
-            else log("WHEEL %ls: no eligible owned ammo (current=%u peer=%u).",slot_label(wheelSlot),
-                current.slotIds[selectedIndex],current.slotIds[slot_index(peer_slot(wheelSlot))]);
+            else log("WHEEL %ls: no eligible owned ammo (current=%u peer=%u).",slot_label(state.wheelSlot),
+                current.slotIds[selectedIndex],current.slotIds[slot_index(peer_slot(state.wheelSlot))]);
         } else if(!snap) {
-            log("WHEEL %ls: inventory snapshot unavailable.",slot_label(wheelSlot));
+            log("WHEEL %ls: inventory snapshot unavailable.",slot_label(state.wheelSlot));
         } else {
-            const auto i=slot_index(wheelSlot);
+            const auto i=slot_index(state.wheelSlot);
             const auto found=std::find_if(current.arrows.begin(),current.arrows.end(),[&](const auto& item){return item.id==current.slotIds[i];});
             log("WHEEL %ls: mapping rejected id=%u handle=%u index=%u tail=%u; inventory handle=%u index=%u type=%u.",
-                slot_label(wheelSlot),current.slotIds[i],current.slotHandles[i],current.slotIndices[i],current.tail,
+                slot_label(state.wheelSlot),current.slotIds[i],current.slotHandles[i],current.slotIndices[i],current.tail,
                 found==current.arrows.end()?0:found->handle,found==current.arrows.end()?0:found->index,
                 found==current.arrows.end()?0:found->type);
             std::array<std::uint32_t,16> nearby{};
@@ -495,67 +482,121 @@ void update(void* hud) {
                     ids[12],ids[13],ids[14],ids[15],ids[16],ids[17],ids[18],ids[19],ids[20],ids[21],ids[22],ids[23]);
         }
     }
-    const bool activeWheelDown=wheelController?controllerWheelDown[slot_index(wheelSlot)]:wheelDown[slot_index(wheelSlot)];
-    if(wheelOpen && activeWheelDown && gameplay && focused) {
+}
+void interact_with_wheel(WheelState& state,bool activeWheelDown,bool gameplay,bool focused,
+    std::uint32_t padButtons,const XINPUT_STATE& padState,std::uint64_t now){
+    if(state.wheelOpen && activeWheelDown && gameplay && focused) {
         int steps=rawPageSteps.exchange(0);
-        if(wheelController){
+        if(state.wheelController){
             steps=0;
             if(controller::down(config.controllerNextPage,padButtons) &&
-               !controller::down(config.controllerNextPage,previousPadButtons))++steps;
+               !controller::down(config.controllerNextPage,state.previousPadButtons))++steps;
             if(controller::down(config.controllerPreviousPage,padButtons) &&
-               !controller::down(config.controllerPreviousPage,previousPadButtons))--steps;
+               !controller::down(config.controllerPreviousPage,state.previousPadButtons))--steps;
         }
         bool pageChanged=false;
-        const auto pages=wheel::page_count(wheelItems.size());
+        const auto pages=wheel::page_count(state.wheelItems.size());
         if(steps && pages>1){
-            wheelPage=wheel::turn_page(wheelPage,pages,steps);
+            state.wheelPage=wheel::turn_page(state.wheelPage,pages,steps);
             pageChanged=true;
         }
-        if(wheelController){
-            controller::right_stick(padState.Gamepad,config.controllerDeadzone,wheelX,wheelY);
+        if(state.wheelController){
+            controller::right_stick(padState.Gamepad,config.controllerDeadzone,state.wheelX,state.wheelY);
         }else{
-            wheelX=std::clamp(wheelX+static_cast<float>(rawDx.exchange(0))*1.1f,-240.f,240.f);
-            wheelY=std::clamp(wheelY+static_cast<float>(rawDy.exchange(0))*1.1f,-240.f,240.f);
+            state.wheelX=std::clamp(state.wheelX+static_cast<float>(rawDx.exchange(0))*1.1f,-240.f,240.f);
+            state.wheelY=std::clamp(state.wheelY+static_cast<float>(rawDy.exchange(0))*1.1f,-240.f,240.f);
             // Some input setups do not use GetRawInputData. Use the actual cursor then.
             if(!originalRawInputData){
                 POINT cursor{};RECT client{};auto window=GetForegroundWindow();
                 if(GetCursorPos(&cursor) && ScreenToClient(window,&cursor) && GetClientRect(window,&client)) {
-                    wheelX=static_cast<float>(cursor.x-(client.right-client.left)/2);
-                    wheelY=static_cast<float>(cursor.y-(client.bottom-client.top)/2);
+                    state.wheelX=static_cast<float>(cursor.x-(client.right-client.left)/2);
+                    state.wheelY=static_cast<float>(cursor.y-(client.bottom-client.top)/2);
                 }
             }
         }
-        const auto selected=wheel::selection(wheelX,wheelY,wheel::page_items(wheelItems.size(),wheelPage),
+        const auto selected=wheel::selection(state.wheelX,state.wheelY,wheel::page_items(state.wheelItems.size(),state.wheelPage),
                                              static_cast<float>(config.cancelRadius));
-        if(pageChanged || selected!=wheelSelected){
-            if(selected>=0 && now-lastHoverSound>=config.hoverSoundCooldown){
-                play_wheel_sound(true);lastHoverSound=now;
+        if(pageChanged || selected!=state.wheelSelected){
+            if(selected>=0 && now-state.lastHoverSound>=config.hoverSoundCooldown){
+                play_wheel_sound(true);state.lastHoverSound=now;
             }
-            wheelSelected=selected;publish_wheel_page(wheelItems,wheelPage,wheelSelected,wheelSlot);
+            state.wheelSelected=selected;publish_wheel_page(state.wheelItems,state.wheelPage,state.wheelSelected,state.wheelSlot);
         }
     }
-    if(wheelOpen && (!activeWheelDown || !gameplay || !focused)) {
+}
+void release_wheel(WheelState& state,bool activeWheelDown,bool gameplay,bool focused,
+    bool padConnected,std::uint64_t now){
+    if(state.wheelOpen && (!activeWheelDown || !gameplay || !focused)) {
         rawWheelOpen.store(false);rawDx.store(0);rawDy.store(0);rawPageSteps.store(0);
-        indicator::publish_wheel({},-1,false,slot_label(wheelSlot));
-        const auto selectedIndex=wheelPage*wheel::pageSize+static_cast<std::size_t>(std::max(wheelSelected,0));
-        if(gameplay && focused && (!wheelController || padConnected) && wheelSelected>=0 && selectedIndex<wheelArrows.size()){
-            pendingWheel=wheelArrows[selectedIndex].id;pendingSlot=wheelSlot;pendingSince=now;
+        indicator::publish_wheel({},-1,false,slot_label(state.wheelSlot));
+        const auto selectedIndex=state.wheelPage*wheel::pageSize+static_cast<std::size_t>(std::max(state.wheelSelected,0));
+        if(gameplay && focused && (!state.wheelController || padConnected) && state.wheelSelected>=0 && selectedIndex<state.wheelArrows.size()){
+            state.pendingWheel=state.wheelArrows[selectedIndex].id;state.pendingSlot=state.wheelSlot;state.pendingSince=now;
         }
-        wheelOpen=false;wheelController=false;wheelArrows.clear();wheelItems.clear();wheelSelected=-1;
+        state.wheelOpen=false;state.wheelController=false;state.wheelArrows.clear();state.wheelItems.clear();state.wheelSelected=-1;
     }
-    wheelWasDown=wheelDown;
-    controllerWheelWasDown=controllerWheelDown;
-    previousPadButtons=padButtons;
+}
+void update(void* hud) {
+    static bool first=true;
+    static input::Edge diagnosticEdge,settingsEdge;
+    static bool initialSnapshot=false;
+    static WheelState state;
+    if (first) { first=false; log("Equipment HUD hook is executing."); }
+    const auto now=GetTickCount64();
+    static std::uint64_t lastInputCheck=0;
+    if(now-lastInputCheck>=500){lastInputCheck=now;settings_ui::ensure_input_window();}
+    static std::uint64_t lastThemeCheck=0;
+    static std::filesystem::file_time_type themeWrite{};
+    reload_customization(now,state.wheelOpen,state.pendingWheel,lastThemeCheck,themeWrite,settingsEdge,
+        state.wheelWasDown,state.controllerWheelWasDown,state.previousPadButtons);
+
+    DWORD pid{}; GetWindowThreadProcessId(GetForegroundWindow(),&pid);
+    const auto inputState=window_input::snapshot();
+    const auto key_down=[&](int key){return inputState.down(key);};
+    const bool focused=pid==GetCurrentProcessId() && inputState.focused;
+    const unsigned modifiers=(key_down(VK_CONTROL)?input::ctrl:0u) | (key_down(VK_SHIFT)?input::shift:0u) |
+        (key_down(VK_MENU)?input::alt:0u) | ((key_down(VK_LWIN)||key_down(VK_RWIN))?input::win:0u);
+    const bool diagPressed=diagnosticEdge.sample(key_down(config.diagnostic.key),input::matches(config.diagnostic,modifiers),focused);
+    const bool gameplay=focused && game::normal_gameplay(addresses,hud);
+    XINPUT_STATE padState{};
+    const bool padConnected=(config.controllerEnabled || settings_ui::is_open()) && xinputGetState &&
+        xinputGetState(config.controllerIndex,&padState)==ERROR_SUCCESS;
+    const auto padButtons=padConnected?controller::held_buttons(padState.Gamepad,config.controllerTrigger):0u;
+    settings_ui::controller_input(padButtons,padConnected);
+    const bool keyboardSettingsPressed=settingsEdge.sample(key_down(config.settingsKey.key),input::matches(config.settingsKey,modifiers),focused);
+    const bool controllerSettingsPressed=controller::down(config.controllerSettings,padButtons) &&
+        !controller::down(config.controllerSettings,state.previousPadButtons);
+    const bool settingsPressed=(keyboardSettingsPressed || controllerSettingsPressed) && gameplay && !settings_ui::is_capturing();
+    if(settingsPressed){
+        settings_ui::toggle();
+        if(state.wheelOpen){state.wheelOpen=false;rawWheelOpen.store(false);indicator::publish_wheel({},-1,false);}
+        state.pendingWheel=0xFFFFFFFFu;
+    }
+    if(!focused || !gameplay)settings_ui::close();
+    const std::array<input::Binding,4> wheelBindings{config.wheel,config.otherWheels[0],config.otherWheels[1],config.otherWheels[2]};
+    std::array<bool,4> wheelDown{};
+    for(std::size_t i=0;i<4;++i)wheelDown[i]=key_down(wheelBindings[i].key) && input::matches(wheelBindings[i],modifiers);
+    std::array<bool,4> controllerWheelDown{};
+    for(std::size_t i=0;i<4;++i)controllerWheelDown[i]=controller::down(config.controllerWheels[i],padButtons);
+    int opening=-1;
+    bool openingController=false;
+    if(!settingsPressed && !state.wheelOpen && !settings_ui::is_open() && gameplay && enabled.load() && indicatorSettings.enabled)
+        for(std::size_t i=0;i<4;++i){
+            if(wheelDown[i]&&!state.wheelWasDown[i]){opening=static_cast<int>(i);break;}
+            if(controllerWheelDown[i]&&!state.controllerWheelWasDown[i]){
+                opening=static_cast<int>(i);openingController=true;break;
+            }
+        }
+    open_wheel(state,opening,openingController);
+    const bool activeWheelDown=state.wheelController?controllerWheelDown[slot_index(state.wheelSlot)]:wheelDown[slot_index(state.wheelSlot)];
+    interact_with_wheel(state,activeWheelDown,gameplay,focused,padButtons,padState,now);
+    release_wheel(state,activeWheelDown,gameplay,focused,padConnected,now);
+    state.wheelWasDown=wheelDown;
+    state.controllerWheelWasDown=controllerWheelDown;
+    state.previousPadButtons=padButtons;
     if (focused && diagPressed) diagnostic(hud);
     if (!initialSnapshot && gameplay) { initialSnapshot=true; diagnostic(hud); }
-    if(pendingWheel!=0xFFFFFFFFu){
-        const bool buttonsDown=key_down(VK_LBUTTON)||key_down(VK_RBUTTON);
-        if(!gameplay || !enabled.load() || now-pendingSince>config.timeout)pendingWheel=0xFFFFFFFFu;
-        else if(!config.deferMouse || !buttonsDown && now-pendingSince>=config.settle){
-            const auto target=pendingWheel;pendingWheel=0xFFFFFFFFu;
-            switch_ammo(pendingSlot,hud,target);
-        }
-    }
+    resolve_pending_switch(hud,inputState,gameplay,now,state.pendingWheel,state.pendingSlot,state.pendingSince);
     update_indicator(gameplay,now);
 }
 

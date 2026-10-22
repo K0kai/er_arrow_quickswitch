@@ -24,10 +24,11 @@ inline std::vector<Arrow> eligible(const std::vector<Arrow>& arrows,std::uint32_
                                    AmmoSlot slot,bool sameFamily=false) {
     std::vector<Arrow> result;
     const auto at=std::find_if(arrows.begin(),arrows.end(),[=](const Arrow& arrow){return arrow.id==current;});
-    if(at==arrows.end() || !slot_accepts(slot,at->type)) return result;
+    const bool empty=current==empty_ammo_id;
+    if(!empty && (at==arrows.end() || !slot_accepts(slot,at->type))) return result;
     for(const auto& arrow:arrows)
         if(arrow.count && slot_accepts(slot,arrow.type) && arrow.id!=reserved &&
-           (!sameFamily || arrow.type==at->type)) result.push_back(arrow);
+           (!sameFamily || empty || arrow.type==at->type)) result.push_back(arrow);
     return result;
 }
 

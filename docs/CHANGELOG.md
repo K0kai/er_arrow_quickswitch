@@ -1,5 +1,9 @@
 # Unreleased
 
+- Add a configurable controller chord to toggle the settings panel, defaulting to Back+Start.
+
+- Add experimental equipping into empty ammo slots, ignoring CycleSameFamily until ammo is equipped.
+
 - Keep the DLL filename stable as ArrowQuickSwitch.dll, with its version in Windows file details.
 
 - Click a binding to capture a keyboard key, mouse button or controller chord.

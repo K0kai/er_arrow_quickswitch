@@ -163,14 +163,21 @@ inline const Arrow* equipped_entry(const Snapshot& s,AmmoSlot slot){
     });
     return at==s.arrows.end()?nullptr:&*at;
 }
+// Only accept the explicit unequipped sentinel in all three equipment fields.
+// Unknown IDs or partially cleared equipment remain inconsistent and blocked.
+inline bool empty_slot(const Snapshot& s,AmmoSlot slot){
+    const auto i=slot_index(slot);
+    return s.slotIds[i]==empty_ammo_id && s.slotHandles[i]==0xFFFFFFFFu &&
+        s.slotIndices[i]==0xFFFFFFFFu;
+}
 inline bool current_matches_slot(const Snapshot& s,AmmoSlot slot){
-    return equipped_entry(s,slot)!=nullptr;
+    return empty_slot(s,slot) || equipped_entry(s,slot)!=nullptr;
 }
 
 inline bool revalidate_slot(const Addresses& a,const Snapshot& s,const Arrow& candidate,AmmoSlot slot){
     if(!slot_accepts(slot,candidate.type))return false;
     const auto* current=equipped_entry(s,slot);
-    if(!current)return false;
+    if(!current && !empty_slot(s,slot))return false;
     if(pointer(a.gdm)!=s.manager || pointer(s.manager+8)!=s.player ||
        pointer(s.player+0x5D0)!=s.inventory || pointer(s.inventory+0x10)!=s.list) return false;
     const auto i=slot_index(slot),peer=slot_index(peer_slot(slot));
@@ -179,8 +186,8 @@ inline bool revalidate_slot(const Addresses& a,const Snapshot& s,const Arrow& ca
     return read(s.player+id_offset(slot),id) && id==s.slotIds[i] &&
         read(s.player+handle_offset(slot),handle) && handle==s.slotHandles[i] &&
         read(s.player+index_offset(slot),index) && index==s.slotIndices[i] &&
-        read(s.list+current->index*sizeof(Entry),equipped) && equipped.id==current->id &&
-        equipped.handle==current->handle &&
+        (empty_slot(s,slot) || (read(s.list+current->index*sizeof(Entry),equipped) &&
+        equipped.id==current->id && equipped.handle==current->handle)) &&
         read(s.player+id_offset(peer_slot(slot)),peerId) && peerId==s.slotIds[peer] &&
         read(s.inventory+0x1C,tail) && tail==s.tail &&
         read(s.list+candidate.index*sizeof(Entry),entry) && entry.handle==candidate.handle &&
