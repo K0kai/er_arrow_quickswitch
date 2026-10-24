@@ -48,6 +48,14 @@ Long names automatically reduce their font size to fit complete lines. The setti
 
 Additional `[Theme]` controls: `ContentBrightnessPercent=115` brightens text/artwork independently (75–150), `SelectionGlowPercent=70` controls highlight lighting (0–100), and `IconBackdropOpacityPercent=45` gives artwork a soft backdrop (0–80). `DecorativeRings=1` enables the outer trim; `AnimateSelection=1` adds a gentle selected-wedge glow. All are available in the Wheel tab.
 
+Item names retain the chosen font size in every selector. Wheel and strip labels
+wrap and use an ellipsis when needed; list labels use a wider single line. The
+strip also shows the selected name below its cards. Scroll the mouse wheel to
+step through list or strip items; crossing the last or first entry on a page
+changes pages automatically. The controller next/previous bindings perform the
+same item steps. The radial wheel retains directional selection and page controls.
+The strip displays four cards per page; the list and wheel display up to eight.
+
 ## Runtime item artwork
 
 The mod reads each ammo item's icon ID from the live weapon parameters. A background worker reads the installed menu layout and texture, decompresses the container, decodes the BC texture, and caches a small image in memory. It reads only the named `menu/low/01_common` or `menu/hi/01_common` files and their relevant archive ranges. It does not unpack the game or write extracted pictures during play. New artwork may appear shortly after opening a wheel for the first time.

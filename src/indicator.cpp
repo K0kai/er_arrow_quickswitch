@@ -123,8 +123,7 @@ struct TextCanvas {
     ~TextCanvas(){if(oldBitmap)SelectObject(dc,oldBitmap);if(bitmap)DeleteObject(bitmap);if(dc)DeleteDC(dc);}
     int width(const std::wstring& text,unsigned size,const std::wstring& family){
         if(!dc)return 0;
-        const auto font=CreateFontW(-static_cast<int>(size),0,0,0,FW_NORMAL,FALSE,FALSE,FALSE,DEFAULT_CHARSET,
-            OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,ANTIALIASED_QUALITY,DEFAULT_PITCH,family.c_str());
+        const auto font=create_text_font(size,family);
         const auto previous=SelectObject(dc,font?font:GetStockObject(DEFAULT_GUI_FONT));
         SIZE measured{};GetTextExtentPoint32W(dc,text.c_str(),static_cast<int>(text.size()),&measured);
         SelectObject(dc,previous);if(font)DeleteObject(font);
@@ -133,7 +132,7 @@ struct TextCanvas {
     void draw(Pixels& image,const std::wstring& text,RECT rect,unsigned size,const std::wstring& family,
               unsigned color,UINT flags=DT_CENTER|DT_SINGLELINE|DT_VCENTER|DT_END_ELLIPSIS|DT_NOPREFIX) {
         if(!memory || text.empty())return;
-        if(flags&DT_WORDBREAK){size=fit_wrapped_text(dc,text,rect,size,family);flags|=DT_EDITCONTROL;}
+        if(flags&DT_WORDBREAK)flags|=DT_EDITCONTROL;
         rect.left=std::clamp(rect.left,0L,static_cast<LONG>(imageWidth));
         rect.right=std::clamp(rect.right,rect.left,static_cast<LONG>(imageWidth));
         rect.top=std::clamp(rect.top,0L,static_cast<LONG>(imageHeight));
@@ -141,8 +140,7 @@ struct TextCanvas {
         auto* mask=static_cast<std::uint8_t*>(memory);
         for(LONG y=rect.top;y<rect.bottom;++y)
             std::memset(mask+(static_cast<std::size_t>(y)*imageWidth+rect.left)*4,0,(rect.right-rect.left)*4);
-        HFONT font=CreateFontW(-static_cast<int>(size),0,0,0,FW_NORMAL,FALSE,FALSE,FALSE,DEFAULT_CHARSET,
-            OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,ANTIALIASED_QUALITY,DEFAULT_PITCH,family.c_str());
+        HFONT font=create_text_font(size,family);
         const auto previous=SelectObject(dc,font?font:GetStockObject(DEFAULT_GUI_FONT));
         DrawTextW(dc,text.c_str(),-1,&rect,flags);GdiFlush();
         const auto ink=[&](LONG x,LONG y){
@@ -401,7 +399,7 @@ Pixels raster_wheel(const Status& current,bool background=true) {
     const bool selected=current.selected>=0&&static_cast<std::size_t>(current.selected)<n;
     const LONG centerHalf=static_cast<LONG>(std::clamp(inner*.83f,55.f,137.f));
     text.draw(result,selected?current.wheel[current.selected].name:L"Cancel",
-        {320-centerHalf,278,320+centerHalf,330},settings.centerSize,settings.fontFamily,
+        {320-centerHalf,270,320+centerHalf,342},settings.centerSize,settings.fontFamily,
         selected?settings.selectedTextColor:settings.textColor,DT_CENTER|DT_WORDBREAK|DT_END_ELLIPSIS|DT_NOPREFIX);
     const bool paged=current.slotLabel.find(L'/')!=std::wstring::npos;
     text.draw(result,selected?current.wheel[current.selected].effect:current.slotLabel,
@@ -441,7 +439,7 @@ void draw_linear_icons(Pixels& image,TextCanvas& text,const WheelItem& item,int 
     const int maxVisible=vertical?4:2;
     const int shown=std::min(count,maxVisible);
     const int startX=vertical?x+width-8-shown*badge:iconX+size-shown*badge/2;
-    const int startY=vertical?y+(height-badge)/2:iconY+size-badge/2;
+    const int startY=vertical?y+height-badge-5:iconY+size-badge/2;
     for(int part=0;part<shown;++part)for(int py=0;py<badge;++py)for(int px=0;px<badge;++px){
         const int ax=tiles[part]*64+px*64/badge,ay=py*64/badge;
         const auto source=(static_cast<std::size_t>(ay)*768+ax)*4;
@@ -458,7 +456,7 @@ Pixels raster_linear(const Status& current,bool vertical) {
     TextCanvas text;
     const int count=static_cast<int>(current.wheel.size());
     const int width=vertical?270:std::min(600,600/count);
-    const int height=vertical?std::min(72,520/count):106;
+    const int height=vertical?std::min(72,520/count):142;
     if(settings.showIcons || settings.showCounts){
         std::vector<unsigned> ids;
         if(settings.showIcons){ids.push_back(item_icons::menuSlotBase);ids.push_back(item_icons::menuSelectionWide);}
@@ -485,13 +483,19 @@ Pixels raster_linear(const Status& current,bool vertical) {
         }else for(int px=x;px<x+width-4;++px)blend_pixel(result,px,y+height-5,settings.accentColor,.4f);
         const auto& item=current.wheel[i];
         draw_linear_icons(result,text,item,x,y,width,height,vertical);
-        text.draw(result,item.name,{x+(vertical?62:7),y+(vertical?6:47),x+width-(vertical?68:11),y+(vertical?height-25:height-27)},
+        // List names share one line; other layouts wrap at the same fixed size.
+        const UINT nameFlags=vertical?DT_CENTER|DT_SINGLELINE|DT_VCENTER|DT_END_ELLIPSIS|DT_NOPREFIX:
+            DT_CENTER|DT_WORDBREAK|DT_END_ELLIPSIS|DT_NOPREFIX;
+        text.draw(result,item.name,{x+(vertical?62:7),y+(vertical?6:47),x+width-(vertical?10:11),y+(vertical?height-25:height-27)},
             settings.nameSize,settings.fontFamily,selected?settings.selectedTextColor:settings.textColor,
-            DT_CENTER|DT_WORDBREAK|DT_END_ELLIPSIS|DT_NOPREFIX);
+            nameFlags);
         if(settings.showCounts)draw_quantity(result,text,item.count,
             {x+(vertical?62:7),y+height-24,x+width-(vertical?68:11),y+height-5},settings.countSize,
             selected?settings.selectedTextColor:settings.countColor,current.slotLabel.starts_with(L"BOLT"));
     }
+    if(!vertical && current.selected>=0 && current.selected<count)
+        text.draw(result,current.wheel[current.selected].name,{40,418,600,454},settings.nameSize,
+            settings.fontFamily,settings.selectedTextColor);
     const auto card=raster_card(current.name);
     std::copy(card.bytes.begin()+indicatorRow*imageWidth*4,card.bytes.end(),result.bytes.begin()+indicatorRow*imageWidth*4);
     return result;
@@ -1053,8 +1057,15 @@ bool preview(const wchar_t* filename,Logger diagnostics,const Settings* options)
     wheel.wheel.push_back({L"Stormwing Bone Arrow",15,L'\u2191',0xD1C39A,L"PHYSICAL",effects::bit(effects::physical)});
     wheel.slotLabel=L"ARROW SLOT 1  2/3";wheel.selected=-1;++wheel.serial;
     if(!save(L".page.png",raster_wheel(wheel)))return false;
-    if(!save(L".strip.png",raster_linear(wheel,false)))return false;
-    if(!save(L".list.png",raster_linear(wheel,true)))return false;
+    Status linear=wheel;linear.selected=1;
+    Status strip=linear;strip.wheel.resize(4);strip.slotLabel=L"ARROW SLOT 1  1/2";
+    if(!save(L".strip.png",raster_linear(strip,false)))return false;
+    if(!save(L".list.png",raster_linear(linear,true)))return false;
+    Status bolts=wheel;
+    bolts.slotLabel=L"BOLT SLOT 1";bolts.selected=5;
+    bolts.wheel={{L"Bolt",100},{L"Black-Key Bolt",30},{L"Burred Bolt",20},{L"Meteor Bolt",20},
+        {L"Golden Bolt",10},{L"Lightningbone Bolt",50},{L"Flaming Bolt",20}};
+    if(!save(L".bolt-list.png",raster_linear(bolts,true)))return false;
     wheel.selected=1;++wheel.serial;if(!save(L".foreground.png",raster_wheel(wheel,false)))return false;
     Discovery probe;if(!probe.create(true))return false;
     capturedQueue.store(probe.queue.Get());previewBackdrop=true;

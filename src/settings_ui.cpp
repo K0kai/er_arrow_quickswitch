@@ -153,6 +153,7 @@ void panel(){
                 int layout=static_cast<int>(editing.selectionLayout);
                 if(ImGui::Combo("Selection design",&layout,layouts,4)){editing.selectionLayout=static_cast<unsigned>(layout);changed=true;}
                 ImGui::TextWrapped("Quick tap switches to the last ammo selected in this session. Hold opens the strip. Other designs select on release.");
+                ImGui::TextWrapped("List and strip: scroll to select one item at a time; pages change automatically. Controller next/previous bindings step items.");
                 changed|=slider("Size",editing.wheelScale,50,150,"%d%%");
                 changed|=slider("Surface opacity",editing.wheelOpacity,0,100,"%d%%");
                 changed|=ImGui::SliderInt("Horizontal position",&editing.wheelOffsetX,-600,600);
@@ -166,7 +167,7 @@ void panel(){
                 ImGui::SeparatorText("Text and icons");
                 changed|=text("Name font",editing.fontFamily);changed|=text("Detail font",editing.detailFont);
                 changed|=slider("Name size",editing.nameSize,12,24);changed|=slider("Count size",editing.countSize,10,22);
-                ImGui::TextWrapped("Long names scale down to fit their wedge.");
+                ImGui::TextWrapped("Names keep this size in every design. Long names wrap or end with an ellipsis.");
                 changed|=slider("Center text size",editing.centerSize,14,28);changed|=slider("Detail text size",editing.effectSize,9,15);
                 changed|=ImGui::Checkbox("Text shadows",&editing.textShadow);changed|=ImGui::Checkbox("Show counts",&editing.showCounts);
                 changed|=ImGui::Checkbox("Show effect labels",&editing.showEffectLabels);changed|=ImGui::Checkbox("Show icons",&editing.showIcons);

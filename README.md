@@ -17,6 +17,12 @@ session; holding the key opens the strip. The choice is saved as
 `SelectionLayout=0..3` under `[Switching]` in the INI and applies without restarting.
 All designs show quantities beside an arrow or bolt bundle glyph. Names default
 to Palatino Linotype, and the ammo indicator shows only the item name.
+Names keep the configured size across designs; long labels wrap or use an ellipsis.
+In the list and strip, scroll to move one item at a time. Pages change automatically
+when selection crosses a page boundary, and the ends wrap around the full list.
+The strip shows four cards per page so labels retain a readable size.
+Controller next/previous bindings step items in these designs. Holding and releasing
+without navigating leaves the equipped ammo unchanged; the radial wheel still uses aiming.
 
 Press **F10** or **Back+Start** on an XInput controller for the settings panel powered by **Dear ImGui**. It includes wheel
 and indicator appearance, keyboard/controller bindings, sound and ammo filtering.

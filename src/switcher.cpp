@@ -5,6 +5,7 @@
 #include "wheel_bindings.hpp"
 #include "controller.hpp"
 #include "wheel.hpp"
+#include "list_navigation.hpp"
 #include "ammo_effects.hpp"
 #include "config_file.hpp"
 #include "theme_config.hpp"
@@ -330,11 +331,12 @@ void play_wheel_sound(bool hover) {
     equipmentSound(&event);
 }
 void publish_wheel_page(const std::vector<indicator::WheelItem>& items,std::size_t page,int selected,AmmoSlot slot){
-    const auto start=page*wheel::pageSize;
-    const auto count=wheel::page_items(items.size(),page);
+    const auto size=wheel::page_size(config.selectionLayout);
+    const auto start=page*size;
+    const auto count=wheel::page_items(items.size(),page,size);
     const std::vector<indicator::WheelItem> visible(items.begin()+start,items.begin()+start+count);
     auto label=std::wstring(slot_label(slot));
-    const auto pages=wheel::page_count(items.size());
+    const auto pages=wheel::page_count(items.size(),size);
     if(pages>1)label+=L"  " + std::to_wstring(page+1) + L"/" + std::to_wstring(pages);
     indicator::publish_wheel(visible,selected,true,label.c_str());
 }
@@ -431,7 +433,7 @@ struct WheelState {
     std::vector<Arrow> wheelArrows;
     std::vector<indicator::WheelItem> wheelItems;
     float wheelX=0,wheelY=0;
-    bool linearArmed=false;
+    list_navigation::Cursor listCursor;
     int wheelSelected=-1;
     std::uint64_t lastHoverSound{};
     std::uint64_t openedAt{};
@@ -468,7 +470,19 @@ void open_wheel(WheelState& state,int opening,bool openingController,std::uint64
             state.wheelArrows=wheel::eligible(current.arrows,current.slotIds[selectedIndex],
                 current.slotIds[slot_index(peer_slot(state.wheelSlot))],state.wheelSlot,config.cycleSameFamily);
             state.wheelItems=make_wheel_items(current,state.wheelArrows,state.wheelSlot,selectedIndex,effectParam);
-            state.wheelOpen=!state.wheelItems.empty();state.wheelX=state.wheelY=0;state.linearArmed=false;state.wheelSelected=-1;state.wheelPage=0;
+            state.wheelOpen=!state.wheelItems.empty();state.wheelX=state.wheelY=0;state.wheelSelected=-1;state.wheelPage=0;
+            state.listCursor.open();
+            if(config.selectionLayout!=0){
+                const auto at=std::find_if(state.wheelArrows.begin(),state.wheelArrows.end(),
+                    [&](const Arrow& arrow){return arrow.id==current.slotIds[selectedIndex];});
+                if(at!=state.wheelArrows.end()){
+                    const auto index=static_cast<int>(at-state.wheelArrows.begin());
+                    state.listCursor.open(index);
+                    const auto size=wheel::page_size(config.selectionLayout);
+                    state.wheelPage=static_cast<std::size_t>(index)/size;
+                    state.wheelSelected=index%static_cast<int>(size);
+                }
+            }
             rawDx.store(0);rawDy.store(0);rawPageSteps.store(0);rawWheelOpen.store(state.wheelOpen&&!state.wheelController);
             if(state.wheelOpen) {
                 publish_wheel_page(state.wheelItems,state.wheelPage,state.wheelSelected,state.wheelSlot);
@@ -501,6 +515,14 @@ void open_wheel(WheelState& state,int opening,bool openingController,std::uint64
         }
     }
 }
+void select_wheel_item(WheelState& state,std::size_t page,int selected,std::uint64_t now){
+    if(page==state.wheelPage && selected==state.wheelSelected)return;
+    if(selected>=0 && now-state.lastHoverSound>=config.hoverSoundCooldown){
+        play_wheel_sound(true);state.lastHoverSound=now;
+    }
+    state.wheelPage=page;state.wheelSelected=selected;
+    publish_wheel_page(state.wheelItems,page,selected,state.wheelSlot);
+}
 void interact_with_wheel(WheelState& state,bool activeWheelDown,bool gameplay,bool focused,
     std::uint32_t padButtons,const XINPUT_STATE& padState,std::uint64_t now){
     if(state.wheelOpen && activeWheelDown && gameplay && focused) {
@@ -512,16 +534,26 @@ void interact_with_wheel(WheelState& state,bool activeWheelDown,bool gameplay,bo
             if(controller::down(config.controllerPreviousPage,padButtons) &&
                !controller::down(config.controllerPreviousPage,state.previousPadButtons))--steps;
         }
-        bool pageChanged=false;
+        if(config.selectionLayout!=0){
+            // Mouse wheel down advances; controller next/previous bindings step items.
+            rawDx.exchange(0);rawDy.exchange(0);
+            state.listCursor.move(state.wheelController?steps:-steps,state.wheelItems.size());
+            if(state.listCursor.index>=0){
+                const auto index=static_cast<std::size_t>(state.listCursor.index);
+                const auto size=wheel::page_size(config.selectionLayout);
+                select_wheel_item(state,index/size,static_cast<int>(index%size),now);
+            }
+            return;
+        }
+        auto page=state.wheelPage;
         const auto pages=wheel::page_count(state.wheelItems.size());
         if(steps && pages>1){
-            state.wheelPage=wheel::turn_page(state.wheelPage,pages,steps);
-            pageChanged=true;
+            page=wheel::turn_page(page,pages,steps);
         }
         if(state.wheelController){
             controller::right_stick(padState.Gamepad,config.controllerDeadzone,state.wheelX,state.wheelY);
         }else{
-            const float sensitivity=config.selectionLayout==0?1.1f:.35f;
+            constexpr float sensitivity=1.1f;
             state.wheelX=std::clamp(state.wheelX+static_cast<float>(rawDx.exchange(0))*sensitivity,-240.f,240.f);
             state.wheelY=std::clamp(state.wheelY+static_cast<float>(rawDy.exchange(0))*sensitivity,-240.f,240.f);
             // Some input setups do not use GetRawInputData. Use the actual cursor then.
@@ -533,18 +565,9 @@ void interact_with_wheel(WheelState& state,bool activeWheelDown,bool gameplay,bo
                 }
             }
         }
-        const auto count=wheel::page_items(state.wheelItems.size(),state.wheelPage);
-        const auto layout=config.selectionLayout==3?1u:config.selectionLayout;
-        if(layout!=0 && !state.wheelController && std::hypot(state.wheelX,state.wheelY)>12.f)state.linearArmed=true;
-        const auto selected=layout==0?wheel::selection(state.wheelX,state.wheelY,count,static_cast<float>(config.cancelRadius)):
-            wheel::linear_selection(layout==2?state.wheelY:state.wheelX,count,
-                state.wheelController?std::hypot(state.wheelX,state.wheelY)>1.f:state.linearArmed);
-        if(pageChanged || selected!=state.wheelSelected){
-            if(selected>=0 && now-state.lastHoverSound>=config.hoverSoundCooldown){
-                play_wheel_sound(true);state.lastHoverSound=now;
-            }
-            state.wheelSelected=selected;publish_wheel_page(state.wheelItems,state.wheelPage,state.wheelSelected,state.wheelSlot);
-        }
+        const auto selected=wheel::selection(state.wheelX,state.wheelY,wheel::page_items(state.wheelItems.size(),page),
+            static_cast<float>(config.cancelRadius));
+        select_wheel_item(state,page,selected,now);
     }
 }
 void release_wheel(WheelState& state,bool activeWheelDown,bool gameplay,bool focused,
@@ -552,14 +575,15 @@ void release_wheel(WheelState& state,bool activeWheelDown,bool gameplay,bool foc
     if(state.wheelOpen && (!activeWheelDown || !gameplay || !focused)) {
         rawWheelOpen.store(false);rawDx.store(0);rawDy.store(0);rawPageSteps.store(0);
         indicator::publish_wheel({},-1,false,slot_label(state.wheelSlot));
-        const auto selectedIndex=state.wheelPage*wheel::pageSize+static_cast<std::size_t>(std::max(state.wheelSelected,0));
+        const auto selectedIndex=state.wheelPage*wheel::page_size(config.selectionLayout)+static_cast<std::size_t>(std::max(state.wheelSelected,0));
         if(gameplay && focused && (!state.wheelController || padConnected)){
             std::uint32_t target=0xFFFFFFFFu;
-            if(config.selectionLayout==3 && now-state.openedAt<220 && state.wheelSelected<0){
+            if(config.selectionLayout==3 && now-state.openedAt<220 && !state.listCursor.navigated){
                 target=state.previousAmmo[slot_index(state.wheelSlot)];
                 const auto found=std::find_if(state.wheelArrows.begin(),state.wheelArrows.end(),[&](const Arrow& arrow){return arrow.id==target;});
                 if(found==state.wheelArrows.end())target=0xFFFFFFFFu;
-            }else if(state.wheelSelected>=0 && selectedIndex<state.wheelArrows.size())target=state.wheelArrows[selectedIndex].id;
+            }else if((config.selectionLayout==0 || state.listCursor.navigated) &&
+                state.wheelSelected>=0 && selectedIndex<state.wheelArrows.size())target=state.wheelArrows[selectedIndex].id;
             if(target!=0xFFFFFFFFu){
                 game::Snapshot snapshot;
                 if(game::snapshot(addresses,snapshot))state.previousAmmo[slot_index(state.wheelSlot)]=snapshot.slotIds[slot_index(state.wheelSlot)];

@@ -10,10 +10,11 @@
 
 namespace arrow_switch::wheel {
 constexpr std::size_t pageSize=8;
-constexpr std::size_t page_count(std::size_t items){return (items+pageSize-1)/pageSize;}
-constexpr std::size_t page_items(std::size_t items,std::size_t page){
-    const auto start=page*pageSize;
-    return start<items?std::min(pageSize,items-start):0;
+constexpr std::size_t page_size(unsigned layout){return layout==1 || layout==3?4:pageSize;}
+constexpr std::size_t page_count(std::size_t items,std::size_t size=pageSize){return size?(items+size-1)/size:0;}
+constexpr std::size_t page_items(std::size_t items,std::size_t page,std::size_t size=pageSize){
+    const auto start=page*size;
+    return start<items?std::min(size,items-start):0;
 }
 constexpr std::size_t turn_page(std::size_t page,std::size_t pages,int scrollSteps){
     if(!pages)return 0;
@@ -39,11 +40,6 @@ inline int selection(float dx,float dy,std::size_t count,float deadZone=78.f) {
     double angle=std::atan2(static_cast<double>(dx),-static_cast<double>(dy));
     if(angle<0) angle+=2*pi;
     return static_cast<int>(std::floor((angle+pi/count)/(2*pi/count)))%static_cast<int>(count);
-}
-inline int linear_selection(float axis,std::size_t count,bool active,float extent=200.f) {
-    if(!count || !active)return -1;
-    const float position=std::clamp((axis+extent)/(2*extent),0.f,.99999f);
-    return static_cast<int>(position*count);
 }
 // Conservative visual hint from the active localized name. Unrecognized names stay neutral.
 struct Affinity { wchar_t badge; std::uint32_t color; const wchar_t* label; };
