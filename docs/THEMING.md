@@ -31,7 +31,7 @@ These keys belong in `[Theme]`. Colors use `#RRGGBB`. Positions and font sizes u
 | `AccentColor`, `SelectionColor` | `#A18C61`, `#E1C484` | Borders and selection marker/outlines. |
 | `TextColor`, `SelectedTextColor` | `#F4EBD6`, `#FFE6A6` | Item names and selected text. |
 | `MutedTextColor`, `CountColor` | `#BDB49F`, `#D9CFB9` | Details and quantities. |
-| `FontFamily`, `DetailFontFamily` | `Cambria`, `Segoe UI` | Installed Windows fonts. |
+| `FontFamily`, `DetailFontFamily` | `Palatino Linotype`, `Segoe UI` | Installed Windows fonts. |
 | `NameFontSize`, `CountFontSize` | `18`, `16` | Name and quantity size. |
 | `EffectFontSize`, `CenterFontSize` | `11`, `22` | Detail and center size. |
 | `TextShadow`, `ShowCounts`, `ShowEffectLabels` | `1`, `1`, `0` | Readability and label visibility. |
@@ -54,18 +54,20 @@ The mod reads each ammo item's icon ID from the live weapon parameters. A backgr
 
 The strip and list also request the game's `MENU_SlotBase.png` and `MENU_FL_Cursor_Wide.png` sprites from those installed menu atlases. The first is used around each ammo image; the second marks the selected entry. These sprites load through the same cache and respect the configured icon source directory. They are not packaged with the mod.
 
+Quantities in every selector use `MENU_SL_Arrow.png` or `MENU_SL_Bolt.png` before the number. These installed-game glyphs are tinted to the quantity text color. A small drawn bundle is used if the asset is unavailable.
+
 Convergence and Reforged roots are detected from loaded native modules when possible. Loader/loose files and packed vanilla assets are also checked. If your replacement textures live elsewhere, choose the root containing the `menu` folder with `IconSourceDirectory` or the panel. Missing/unsupported artwork falls back to effect badges. No arrow/bolt artwork is shipped. An optional local `assets/wheel-game-icons.rgba` file supplies legacy damage/status badges; without it, the renderer uses fallback symbols. This game-derived sheet is not included in the source repository.
 
 ## Ammo indicator
 
-The indicator is text only with a transparent background. Its scale and placement are independent of the wheel and remain consistent after closing it. `[Indicator] Enabled=0` retains its legacy meaning of disabling the overlay; use `ShowAmmoText=0` to hide only the indicator.
+The indicator shows only the selected ammo name on a transparent background. Quantity appears beside an arrow or bolt bundle glyph in every selector design. Its scale and placement are independent of the selector and remain consistent after closing it. `[Indicator] Enabled=0` retains its legacy meaning of disabling the overlay; use `ShowAmmoText=0` to hide only the indicator.
 
 | `[Indicator]` keys | Defaults | Purpose |
 | --- | --- | --- |
 | `ShowAmmoText`, `AlwaysShow` | `1`, `0` | Visibility and persistent display. |
 | `DurationMs`, `ScalePercent` | `3500`, `100` | Duration (500–30000 ms) and scale (50–200%). |
-| `FontFamily`, `NameFontSize`, `DetailFontSize` | `Cambria`, `22`, `11` | Name font and text sizes; details use the theme detail font. |
-| `TextColor`, `DetailColor` | `#F4EBD6`, `#C7B585` | Text colors. |
+| `FontFamily`, `NameFontSize` | `Palatino Linotype`, `22` | Indicator name font and size. |
+| `TextColor` | `#F4EBD6` | Indicator name color. |
 | `Gap`, `OffsetX`, `OffsetY` | `24`, `0`, `0` | Gap below the wheel canvas and relative offsets. |
 | `FadeInMs`, `FadeOutMs` | `180`, `600` | Smooth fade timing; 0 disables that fade. |
 

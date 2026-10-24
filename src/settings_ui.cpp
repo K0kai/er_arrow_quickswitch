@@ -188,8 +188,7 @@ void panel(){
                 changed|=ImGui::Checkbox("Show ammo text",&editing.showIndicator);changed|=ImGui::Checkbox("Always show",&editing.alwaysShow);
                 changed|=slider("Text scale",editing.scale,50,200,"%d%%");changed|=slider("Display time",editing.duration,500,30000,"%d ms");
                 changed|=text("Font",editing.indicatorFont);changed|=slider("Name size",editing.indicatorNameSize,12,30);
-                changed|=slider("Detail size",editing.indicatorDetailSize,9,18);changed|=color("Text color",editing.indicatorTextColor);
-                changed|=color("Detail color",editing.indicatorDetailColor);changed|=slider("Gap below wheel",editing.indicatorGap,0,180);
+                changed|=color("Text color",editing.indicatorTextColor);changed|=slider("Gap below wheel",editing.indicatorGap,0,180);
                 changed|=ImGui::SliderInt("Horizontal offset",&editing.indicatorOffsetX,-600,600);
                 changed|=ImGui::SliderInt("Vertical offset",&editing.indicatorOffsetY,-400,400);
                 changed|=slider("Fade in",editing.fadeIn,0,3000,"%d ms");changed|=slider("Fade out",editing.fadeOut,0,5000,"%d ms");

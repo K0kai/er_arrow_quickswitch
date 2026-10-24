@@ -26,7 +26,7 @@
 namespace arrow_switch::indicator {
 using Microsoft::WRL::ComPtr;
 namespace {
-constexpr UINT cardWidth=420,cardHeight=88,imageWidth=640,imageHeight=768;
+constexpr UINT cardWidth=static_cast<UINT>(cardReferenceWidth),cardHeight=static_cast<UINT>(cardReferenceHeight),imageWidth=640,imageHeight=768;
 constexpr UINT indicatorRow=656,wheelCanvas=640;
 Settings settings;
 Settings pendingSettings;
@@ -121,6 +121,15 @@ struct TextCanvas {
         if(bitmap){oldBitmap=SelectObject(dc,bitmap);SetBkMode(dc,TRANSPARENT);SetTextColor(dc,RGB(255,255,255));}
     }
     ~TextCanvas(){if(oldBitmap)SelectObject(dc,oldBitmap);if(bitmap)DeleteObject(bitmap);if(dc)DeleteDC(dc);}
+    int width(const std::wstring& text,unsigned size,const std::wstring& family){
+        if(!dc)return 0;
+        const auto font=CreateFontW(-static_cast<int>(size),0,0,0,FW_NORMAL,FALSE,FALSE,FALSE,DEFAULT_CHARSET,
+            OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,ANTIALIASED_QUALITY,DEFAULT_PITCH,family.c_str());
+        const auto previous=SelectObject(dc,font?font:GetStockObject(DEFAULT_GUI_FONT));
+        SIZE measured{};GetTextExtentPoint32W(dc,text.c_str(),static_cast<int>(text.size()),&measured);
+        SelectObject(dc,previous);if(font)DeleteObject(font);
+        return measured.cx;
+    }
     void draw(Pixels& image,const std::wstring& text,RECT rect,unsigned size,const std::wstring& family,
               unsigned color,UINT flags=DT_CENTER|DT_SINGLELINE|DT_VCENTER|DT_END_ELLIPSIS|DT_NOPREFIX) {
         if(!memory || text.empty())return;
@@ -236,14 +245,61 @@ int icon_index(const std::wstring& effect) {
     for(int i=0;i<13;++i) if(effect==names[i]) return i==10?9:i>=11?i-1:i;
     return -1;
 }
-Pixels raster_card(const std::wstring& name,std::uint32_t count,const std::wstring& slotLabel) {
+void draw_menu_sprite(Pixels& image,const item_icons::Image& sprite,int x,int y,int width,int height,unsigned tint=0xFFFFFFFFu){
+    if(width<=0 || height<=0)return;
+    for(int py=0;py<height;++py)for(int px=0;px<width;++px){
+        const unsigned sx=sprite.contentX+px*sprite.contentWidth/width;
+        const unsigned sy=sprite.contentY+py*sprite.contentHeight/height;
+        const auto source=(static_cast<std::size_t>(sy)*sprite.width+sx)*4;
+        if(source+3>=sprite.rgba.size())continue;
+        const auto& rgba=sprite.rgba;
+        const unsigned color=tint==0xFFFFFFFFu?(rgba[source]<<16)|(rgba[source+1]<<8)|rgba[source+2]:tint;
+        blend_pixel(image,x+px,y+py,color,rgba[source+3]/255.f);
+    }
+}
+void draw_bundle_fallback(Pixels& image,int x,int y,int width,int height,unsigned color){
+    const auto line=[&](float ax,float ay,float bx,float by){
+        const int steps=std::max(1,static_cast<int>(std::ceil(std::max(std::abs(bx-ax),std::abs(by-ay)))));
+        for(int step=0;step<=steps;++step){
+            const float t=static_cast<float>(step)/steps;
+            blend_pixel(image,x+static_cast<int>(std::round(ax+(bx-ax)*t)),y+static_cast<int>(std::round(ay+(by-ay)*t)),color,.85f);
+        }
+    };
+    for(int arrow=0;arrow<3;++arrow){
+        const float tail=width*(.12f+.22f*arrow),head=tail+width*.35f;
+        line(tail,height-2.f,head,2.f);
+        line(head,2.f,head-width*.22f,5.f);
+        line(head,2.f,head+width*.1f,5.f);
+        line(tail,height-2.f,tail-width*.08f,height-6.f);
+    }
+}
+void draw_quantity(Pixels& image,TextCanvas& text,std::uint32_t count,RECT bounds,unsigned size,unsigned color,bool bolt){
+    const auto number=std::to_wstring(count);
+    const auto sprite=item_icons::request(bolt?item_icons::menuBoltQuantity:item_icons::menuArrowQuantity);
+    const float aspect=sprite?static_cast<float>(sprite->contentWidth)/sprite->contentHeight:.56f;
+    const int available=bounds.right-bounds.left,boxHeight=bounds.bottom-bounds.top;
+    if(available<=0 || boxHeight<=0)return;
+    int iconHeight{},iconWidth{},numberWidth{},groupWidth{};
+    do{
+        iconHeight=std::min(boxHeight,static_cast<int>(size)+3);
+        iconWidth=std::max(6,static_cast<int>(std::round(iconHeight*aspect)));
+        numberWidth=text.width(number,size,settings.detailFont);
+        groupWidth=iconWidth+5+numberWidth;
+        if(groupWidth<=available || size<=10)break;
+        --size;
+    }while(true);
+    const int left=bounds.left+(available-groupWidth)/2,top=bounds.top+(boxHeight-iconHeight)/2;
+    if(sprite)draw_menu_sprite(image,*sprite,left,top,iconWidth,iconHeight,color);
+    else draw_bundle_fallback(image,left,top,iconWidth,iconHeight,color);
+    text.draw(image,number,{left+iconWidth+5,bounds.top,left+groupWidth,bounds.bottom},size,settings.detailFont,color,
+        DT_LEFT|DT_SINGLELINE|DT_VCENTER|DT_NOPREFIX);
+}
+Pixels raster_card(const std::wstring& name) {
     Pixels result;result.bytes.resize(imageWidth*imageHeight*4);
     if(!settings.showIndicator || name.empty())return result;
     TextCanvas text;
     const LONG y=indicatorRow;
     text.draw(result,name,{4,y+4,416,y+43},settings.indicatorNameSize,settings.indicatorFont,settings.indicatorTextColor);
-    text.draw(result,slotLabel+L"   \u00d7 "+std::to_wstring(count),{4,y+45,416,y+71},
-        settings.indicatorDetailSize,settings.detailFont,settings.indicatorDetailColor);
     return result;
 }
 
@@ -278,8 +334,10 @@ Pixels raster_wheel(const Status& current,bool background=true) {
         }
     }
     const auto& atlas=game_icons();
-    if(settings.showIcons && settings.showItemIcons){
-        std::vector<unsigned> ids;for(const auto& item:current.wheel)ids.push_back(item.iconId);
+    if(settings.showCounts || (settings.showIcons && settings.showItemIcons)){
+        std::vector<unsigned> ids;
+        if(settings.showCounts)ids.push_back(current.slotLabel.starts_with(L"BOLT")?item_icons::menuBoltQuantity:item_icons::menuArrowQuantity);
+        if(settings.showIcons && settings.showItemIcons)for(const auto& item:current.wheel)ids.push_back(item.iconId);
         item_icons::prefetch(ids);
     }
     TextCanvas text;
@@ -337,8 +395,8 @@ Pixels raster_wheel(const Status& current,bool background=true) {
         text.draw(result,item.name,{cx-halfWidth,cy+nameTop,cx+halfWidth,cy+44},settings.nameSize,settings.fontFamily,nameColor,
             DT_CENTER|DT_WORDBREAK|DT_END_ELLIPSIS|DT_NOPREFIX);
         if(settings.showCounts)
-            text.draw(result,L"\u00d7 "+std::to_wstring(item.count),{cx-halfWidth,cy+45,cx+halfWidth,cy+67},
-                settings.countSize,settings.detailFont,selected?settings.selectedTextColor:settings.countColor);
+            draw_quantity(result,text,item.count,{cx-halfWidth,cy+45,cx+halfWidth,cy+67},
+                settings.countSize,selected?settings.selectedTextColor:settings.countColor,current.slotLabel.starts_with(L"BOLT"));
     }
     const bool selected=current.selected>=0&&static_cast<std::size_t>(current.selected)<n;
     const LONG centerHalf=static_cast<LONG>(std::clamp(inner*.83f,55.f,137.f));
@@ -350,22 +408,11 @@ Pixels raster_wheel(const Status& current,bool background=true) {
         {320-centerHalf,345,320+centerHalf,369},settings.effectSize,settings.detailFont,settings.mutedColor);
     if(paged && selected)text.draw(result,current.slotLabel,{320-centerHalf,371,320+centerHalf,393},
         settings.effectSize,settings.detailFont,settings.mutedColor);
-    const auto card=raster_card(current.name,current.count,current.indicatorLabel);
+    const auto card=raster_card(current.name);
     std::copy(card.bytes.begin()+indicatorRow*imageWidth*4,card.bytes.end(),result.bytes.begin()+indicatorRow*imageWidth*4);
     return result;
 }
 
-void draw_menu_sprite(Pixels& image,const item_icons::Image& sprite,int x,int y,int width,int height){
-    if(width<=0 || height<=0)return;
-    for(int py=0;py<height;++py)for(int px=0;px<width;++px){
-        const unsigned sx=sprite.contentX+px*sprite.contentWidth/width;
-        const unsigned sy=sprite.contentY+py*sprite.contentHeight/height;
-        const auto source=(static_cast<std::size_t>(sy)*sprite.width+sx)*4;
-        if(source+3>=sprite.rgba.size())continue;
-        const auto& rgba=sprite.rgba;
-        blend_pixel(image,x+px,y+py,(rgba[source]<<16)|(rgba[source+1]<<8)|rgba[source+2],rgba[source+3]/255.f);
-    }
-}
 void draw_linear_icons(Pixels& image,TextCanvas& text,const WheelItem& item,int x,int y,int width,int height,bool vertical){
     if(!settings.showIcons)return;
     const int size=std::clamp(static_cast<int>(40*settings.itemIconScale/100),24,48);
@@ -412,9 +459,11 @@ Pixels raster_linear(const Status& current,bool vertical) {
     const int count=static_cast<int>(current.wheel.size());
     const int width=vertical?270:std::min(600,600/count);
     const int height=vertical?std::min(72,520/count):106;
-    if(settings.showIcons){
-        std::vector<unsigned> ids{item_icons::menuSlotBase,item_icons::menuSelectionWide};
-        if(settings.showItemIcons)for(const auto& item:current.wheel)ids.push_back(item.iconId);
+    if(settings.showIcons || settings.showCounts){
+        std::vector<unsigned> ids;
+        if(settings.showIcons){ids.push_back(item_icons::menuSlotBase);ids.push_back(item_icons::menuSelectionWide);}
+        if(settings.showCounts)ids.push_back(current.slotLabel.starts_with(L"BOLT")?item_icons::menuBoltQuantity:item_icons::menuArrowQuantity);
+        if(settings.showIcons && settings.showItemIcons)for(const auto& item:current.wheel)ids.push_back(item.iconId);
         item_icons::prefetch(ids);
     }
     const int titleY=vertical?std::max(16,320-count*height/2-52):213;
@@ -431,18 +480,19 @@ Pixels raster_linear(const Status& current,bool vertical) {
             blend_pixel(result,px,py,color,settings.wheelOpacity/100.f*(1.f-.18f*(py-y)/height));
         if(selected){
             if(const auto bar=item_icons::request(item_icons::menuSelectionWide))
-                draw_menu_sprite(result,*bar,x+3,y+height-15,width-10,10);
+                draw_menu_sprite(result,*bar,x+3,y+height-3,width-10,2);
             else for(int px=x;px<x+width-4;++px)blend_pixel(result,px,y+height-5,settings.selectionColor,.85f);
         }else for(int px=x;px<x+width-4;++px)blend_pixel(result,px,y+height-5,settings.accentColor,.4f);
         const auto& item=current.wheel[i];
         draw_linear_icons(result,text,item,x,y,width,height,vertical);
-        text.draw(result,item.name,{x+(vertical?62:7),y+(vertical?6:47),x+width-(vertical?68:11),y+(vertical?height-20:height-24)},
+        text.draw(result,item.name,{x+(vertical?62:7),y+(vertical?6:47),x+width-(vertical?68:11),y+(vertical?height-25:height-27)},
             settings.nameSize,settings.fontFamily,selected?settings.selectedTextColor:settings.textColor,
             DT_CENTER|DT_WORDBREAK|DT_END_ELLIPSIS|DT_NOPREFIX);
-        if(settings.showCounts)text.draw(result,L"\u00d7 "+std::to_wstring(item.count),
-            {x+(vertical?62:7),y+height-23,x+width-(vertical?68:11),y+height-3},settings.countSize,settings.detailFont,settings.countColor);
+        if(settings.showCounts)draw_quantity(result,text,item.count,
+            {x+(vertical?62:7),y+height-24,x+width-(vertical?68:11),y+height-5},settings.countSize,
+            selected?settings.selectedTextColor:settings.countColor,current.slotLabel.starts_with(L"BOLT"));
     }
-    const auto card=raster_card(current.name,current.count,current.indicatorLabel);
+    const auto card=raster_card(current.name);
     std::copy(card.bytes.begin()+indicatorRow*imageWidth*4,card.bytes.end(),result.bytes.begin()+indicatorRow*imageWidth*4);
     return result;
 }
@@ -708,7 +758,7 @@ bool render(IDXGISwapChain* swapchain,const Status& current,float opacity) {
     if (newTexture) {
         auto image=current.wheelOpen?(settings.selectionLayout==0?raster_wheel(current,false):
             raster_linear(current,settings.selectionLayout==2)):
-            raster_card(current.name,current.count,current.indicatorLabel);
+            raster_card(current.name);
         void* mapped{}; D3D12_RANGE noRead{0,0};
         if (FAILED(r.upload->Map(0,&noRead,&mapped))) { r.commands->Close(); return false; }
         for (UINT row=0;row<imageHeight;++row)
@@ -987,7 +1037,7 @@ bool preview(const wchar_t* filename,Logger diagnostics,const Settings* options)
     const auto save=[&](const wchar_t* suffix,const Pixels& image){
         const auto path=std::wstring(filename)+suffix;return png(path.c_str(),image.bytes.data(),imageWidth,imageHeight,imageWidth*4);
     };
-    if(!save(L"",raster_card(L"Stormwing Bone Arrow",20,L"ARROW SLOT 1")))return false;
+    if(!save(L"",raster_card(L"Stormwing Bone Arrow")))return false;
     Status example;example.name=L"Stormwing Bone Arrow";example.id=50190000;example.count=20;
     example.changed=GetTickCount64();example.serial=1;
     Status wheel;

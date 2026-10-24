@@ -48,7 +48,7 @@ int main() {
                 assert(rect.x+rect.width<=width-7.99f && rect.y+rect.height<=height-7.99f);
             }
             assert(std::abs(l.wheel.width-l.wheel.height)<.01f);
-            assert(std::abs(l.indicator.width/l.indicator.height-420.f/88.f)<.01f);
+            assert(std::abs(l.indicator.width/l.indicator.height-420.f/52.f)<.01f);
         }
         const auto normal=indicator::layout(width,height,100,100,24,0,0,0,0);
         assert(normal.indicator.y>=normal.wheel.y+normal.wheel.height);

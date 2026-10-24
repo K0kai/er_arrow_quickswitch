@@ -15,6 +15,8 @@ horizontal strip, side list, and quick tap with a strip on hold. In quick tap mo
 a brief press recalls the previous ammo selected for that slot during the current
 session; holding the key opens the strip. The choice is saved as
 `SelectionLayout=0..3` under `[Switching]` in the INI and applies without restarting.
+All designs show quantities beside an arrow or bolt bundle glyph. Names default
+to Palatino Linotype, and the ammo indicator shows only the item name.
 
 Press **F10** or **Back+Start** on an XInput controller for the settings panel powered by **Dear ImGui**. It includes wheel
 and indicator appearance, keyboard/controller bindings, sound and ammo filtering.

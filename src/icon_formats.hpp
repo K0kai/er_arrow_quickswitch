@@ -71,6 +71,8 @@ inline IconLayout parse_layout(View bytes) {
             unsigned namedId=0;
             if(name=="MENU_SlotBase.png")namedId=0xF0000001u;
             if(name=="MENU_FL_Cursor_Wide.png")namedId=0xF0000002u;
+            if(name=="MENU_SL_Arrow.png")namedId=0xF0000003u;
+            if(name=="MENU_SL_Bolt.png")namedId=0xF0000004u;
             if(namedId){
                 IconRect rect{atlas,integer(attribute(tag,"x")),integer(attribute(tag,"y")),
                     integer(attribute(tag,"width")),integer(attribute(tag,"height"))};

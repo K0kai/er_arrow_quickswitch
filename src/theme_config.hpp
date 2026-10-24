@@ -85,14 +85,12 @@ inline indicator::Settings load(const std::filesystem::path& path) {
     s.duration=static_cast<unsigned>(number(L"Indicator",L"DurationMs",3500,500,30000));
     s.scale=static_cast<unsigned>(number(L"Indicator",L"ScalePercent",100,50,200));
     s.indicatorNameSize=static_cast<unsigned>(number(L"Indicator",L"NameFontSize",22,12,30));
-    s.indicatorDetailSize=static_cast<unsigned>(number(L"Indicator",L"DetailFontSize",11,9,18));
     s.indicatorGap=static_cast<unsigned>(number(L"Indicator",L"Gap",24,0,180));
     s.indicatorOffsetX=number(L"Indicator",L"OffsetX",0,-2000,2000);
     s.indicatorOffsetY=number(L"Indicator",L"OffsetY",0,-2000,2000);
     s.fadeIn=static_cast<unsigned>(number(L"Indicator",L"FadeInMs",180,0,3000));
     s.fadeOut=static_cast<unsigned>(number(L"Indicator",L"FadeOutMs",600,0,5000));
     s.indicatorTextColor=color(L"Indicator",L"TextColor",s.indicatorTextColor);
-    s.indicatorDetailColor=color(L"Indicator",L"DetailColor",s.indicatorDetailColor);
     s.indicatorFont=text(L"Indicator",L"FontFamily",s.indicatorFont);
     return s;
 }
@@ -124,10 +122,10 @@ inline bool save(const std::filesystem::path& path,const indicator::Settings& s)
     write(L"Theme",L"SelectionImage",s.selectionImage);write(L"Theme",L"IconSourceDirectory",s.iconSourceDirectory);
     SAVE_NUM("Indicator",enabled,"Enabled");SAVE_NUM("Indicator",showIndicator,"ShowAmmoText");SAVE_NUM("Indicator",alwaysShow,"AlwaysShow");
     SAVE_NUM("Indicator",duration,"DurationMs");SAVE_NUM("Indicator",scale,"ScalePercent");
-    SAVE_NUM("Indicator",indicatorNameSize,"NameFontSize");SAVE_NUM("Indicator",indicatorDetailSize,"DetailFontSize");
+    SAVE_NUM("Indicator",indicatorNameSize,"NameFontSize");
     SAVE_NUM("Indicator",indicatorGap,"Gap");SAVE_NUM("Indicator",indicatorOffsetX,"OffsetX");SAVE_NUM("Indicator",indicatorOffsetY,"OffsetY");
     SAVE_NUM("Indicator",fadeIn,"FadeInMs");SAVE_NUM("Indicator",fadeOut,"FadeOutMs");
-    SAVE_COLOR("Indicator",indicatorTextColor,"TextColor");SAVE_COLOR("Indicator",indicatorDetailColor,"DetailColor");
+    SAVE_COLOR("Indicator",indicatorTextColor,"TextColor");
     write(L"Indicator",L"FontFamily",s.indicatorFont);
 #undef SAVE_NUM
 #undef SAVE_COLOR

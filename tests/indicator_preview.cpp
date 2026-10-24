@@ -3,6 +3,7 @@
 #include "../src/theme_config.hpp"
 #include "../src/settings_ui.hpp"
 #include "../src/window_input.hpp"
+#include "../src/item_icons.hpp"
 #include <cassert>
 #include <cstdio>
 #include <cstdarg>
@@ -10,8 +11,20 @@ void report(const char* text,...) {
     va_list args; va_start(args,text); std::vprintf(text,args); va_end(args); std::putchar('\n');
 }
 int wmain(int argc,wchar_t** argv) {
-    if (argc<2 || argc>3) return 2;
-    const auto settings=argc==3?arrow_switch::theme::load(argv[2]):arrow_switch::indicator::Settings{};
+    if (argc<2 || argc>4) return 2;
+    const auto settings=argc>=3?arrow_switch::theme::load(argv[2]):arrow_switch::indicator::Settings{};
+    // Optional installed-game root validates the real sprites instead of fallbacks.
+    if(argc==4){
+        namespace icons=arrow_switch::item_icons;
+        icons::initialize(argv[3],report);
+        const std::vector<unsigned> sprites{icons::menuSlotBase,icons::menuSelectionWide,icons::menuArrowQuantity,icons::menuBoltQuantity};
+        icons::prefetch(sprites);
+        const auto deadline=GetTickCount64()+10000;
+        while(!std::all_of(sprites.begin(),sprites.end(),[](unsigned id){return static_cast<bool>(icons::request(id));})){
+            if(GetTickCount64()>=deadline){std::puts("Installed menu sprite extraction failed.");return 1;}
+            Sleep(25);
+        }
+    }
     if (!arrow_switch::indicator::preview(argv[1],report,&settings)) {
         std::puts("Indicator raster or D3D12/WARP pipeline test failed."); return 1;
     }

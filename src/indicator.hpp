@@ -15,8 +15,8 @@ struct Settings {
     unsigned textColor=0xF4EBD6, mutedColor=0xBDB49F, countColor=0xD9CFB9, selectedTextColor=0xFFE6A6;
     unsigned nameSize=18, countSize=16, effectSize=11, centerSize=22;
     unsigned iconScale=90, markerScale=100, borderScale=100, brightness=100, paperWhite=200;
-    unsigned indicatorNameSize=22, indicatorDetailSize=11, indicatorGap=24;
-    unsigned indicatorTextColor=0xF4EBD6, indicatorDetailColor=0xC7B585, fadeIn=180, fadeOut=600;
+    unsigned indicatorNameSize=22, indicatorGap=24;
+    unsigned indicatorTextColor=0xF4EBD6, fadeIn=180, fadeOut=600;
     int wheelOffsetX=0,wheelOffsetY=0,indicatorOffsetX=0,indicatorOffsetY=0;
     bool showIcons=true,showEffectIcons=true,showEffectLabels=false,showCounts=true,showIndicator=true,textShadow=true,showMarker=true;
     bool showItemIcons=true;
@@ -24,7 +24,7 @@ struct Settings {
     unsigned contentBrightness=115,selectionGlow=70,iconBackdrop=45;
     bool decorativeRings=true,animateSelection=true;
     std::wstring iconSourceDirectory;
-    std::wstring fontFamily=L"Cambria",detailFont=L"Segoe UI",indicatorFont=L"Cambria";
+    std::wstring fontFamily=L"Palatino Linotype",detailFont=L"Segoe UI",indicatorFont=L"Palatino Linotype";
     std::wstring selectionImage;
 };
 bool install(HMODULE module,const Settings& settings,Logger logger);
