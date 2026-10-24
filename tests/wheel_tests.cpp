@@ -30,6 +30,9 @@ int main(){
     assert(wheel::selection(0,100,4)==2);
     assert(wheel::selection(-100,0,4)==3);
     assert(wheel::selection(100,0,0)==-1);
+    assert(wheel::linear_selection(0,8,false)==-1);
+    for(int i=0;i<8;++i)assert(wheel::linear_selection(-175.f+i*50.f,8,true)==i);
+    assert(wheel::linear_selection(0,8,true)==4);
     assert(wheel::affinity(L"Lightningbone Arrow").badge==L'\u26a1');
     assert(wheel::affinity(L"Bloodbone Arrow").badge==L'\u2666');
     assert(wheel::affinity(L"Scarlet Rot Arrow").badge==L'\u2623');

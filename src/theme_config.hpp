@@ -34,6 +34,7 @@ inline indicator::Settings load(const std::filesystem::path& path) {
         GetPrivateProfileStringW(section,key,fallback.c_str(),value,1024,file.c_str());
         return std::wstring(value);
     };
+    s.selectionLayout=static_cast<unsigned>(number(L"Switching",L"SelectionLayout",0,0,3));
 #define THEME_NUM(member,key,low,high) s.member=static_cast<unsigned>(number(L"Theme",L##key,static_cast<int>(s.member),low,high))
 #define THEME_COLOR(member,key) s.member=color(L"Theme",L##key,s.member)
     THEME_NUM(wheelOpacity,"WheelOpacityPercent",0,100);
@@ -103,6 +104,7 @@ inline bool save(const std::filesystem::path& path,const indicator::Settings& s)
     const auto color=[&](const wchar_t* section,const wchar_t* key,unsigned value){
         wchar_t text[8]{};swprintf_s(text,L"#%06X",value&0xFFFFFF);write(section,key,text);
     };
+    write(L"Switching",L"SelectionLayout",std::to_wstring(s.selectionLayout));
 #define SAVE_NUM(section,member,key) write(L##section,L##key,std::to_wstring(s.member))
 #define SAVE_COLOR(section,member,key) color(L##section,L##key,s.member)
     SAVE_NUM("Theme",wheelOpacity,"WheelOpacityPercent");SAVE_NUM("Theme",wheelScale,"WheelScalePercent");

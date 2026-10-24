@@ -7,6 +7,7 @@
 namespace arrow_switch::indicator {
 using Logger=void(*)(const char*,...);
 struct Settings {
+    unsigned selectionLayout=0; // 0 wheel, 1 strip, 2 list, 3 quick tap with strip on hold
     bool enabled=true,alwaysShow=false;
     unsigned duration=3500,scale=100,left=40,bottom=240;
     unsigned wheelOpacity=72, cancelRadius=78, selectionColor=0xE1C484, accentColor=0xA18C61;

@@ -355,6 +355,98 @@ Pixels raster_wheel(const Status& current,bool background=true) {
     return result;
 }
 
+void draw_menu_sprite(Pixels& image,const item_icons::Image& sprite,int x,int y,int width,int height){
+    if(width<=0 || height<=0)return;
+    for(int py=0;py<height;++py)for(int px=0;px<width;++px){
+        const unsigned sx=sprite.contentX+px*sprite.contentWidth/width;
+        const unsigned sy=sprite.contentY+py*sprite.contentHeight/height;
+        const auto source=(static_cast<std::size_t>(sy)*sprite.width+sx)*4;
+        if(source+3>=sprite.rgba.size())continue;
+        const auto& rgba=sprite.rgba;
+        blend_pixel(image,x+px,y+py,(rgba[source]<<16)|(rgba[source+1]<<8)|rgba[source+2],rgba[source+3]/255.f);
+    }
+}
+void draw_linear_icons(Pixels& image,TextCanvas& text,const WheelItem& item,int x,int y,int width,int height,bool vertical){
+    if(!settings.showIcons)return;
+    const int size=std::clamp(static_cast<int>(40*settings.itemIconScale/100),24,48);
+    const int iconX=vertical?x+8:x+(width-size)/2;
+    const int iconY=vertical?y+(height-size)/2:y+5;
+    if(const auto base=item_icons::request(item_icons::menuSlotBase))
+        draw_menu_sprite(image,*base,iconX-5,iconY-5,size+10,size+10);
+    const auto artwork=settings.showItemIcons?item_icons::request(item.iconId):nullptr;
+    if(artwork){
+        for(int py=0;py<size;++py)for(int px=0;px<size;++px){
+            const auto source=(static_cast<std::size_t>(py*artwork->height/size)*artwork->width+px*artwork->width/size)*4;
+            const auto& rgba=artwork->rgba;
+            blend_pixel(image,iconX+px,iconY+py,(rgba[source]<<16)|(rgba[source+1]<<8)|rgba[source+2],rgba[source+3]/255.f);
+        }
+    }else text.draw(image,std::wstring(1,item.badge),{iconX,iconY,iconX+size,iconY+size},
+        25,L"Segoe UI Symbol",item.color);
+    if(!settings.showEffectIcons)return;
+    const auto& atlas=game_icons();
+    if(atlas.size()!=768*64*4)return;
+    std::array<int,12> tiles{};int count=0;
+    if(item.iconsMask){
+        constexpr int order[]{0,1,2,3,4,5,6,7,8,10,11,9};
+        for(const auto tile:order)if(item.iconsMask&(1u<<tile))tiles[count++]=tile;
+    }else if(const auto tile=icon_index(item.effect);tile>=0)tiles[count++]=tile;
+    const int badge=std::clamp(static_cast<int>(20*settings.iconScale/100),14,24);
+    const int maxVisible=vertical?4:2;
+    const int shown=std::min(count,maxVisible);
+    const int startX=vertical?x+width-8-shown*badge:iconX+size-shown*badge/2;
+    const int startY=vertical?y+(height-badge)/2:iconY+size-badge/2;
+    for(int part=0;part<shown;++part)for(int py=0;py<badge;++py)for(int px=0;px<badge;++px){
+        const int ax=tiles[part]*64+px*64/badge,ay=py*64/badge;
+        const auto source=(static_cast<std::size_t>(ay)*768+ax)*4;
+        blend_pixel(image,startX+part*badge+px,startY+py,
+            (atlas[source]<<16)|(atlas[source+1]<<8)|atlas[source+2],atlas[source+3]/255.f);
+    }
+    if(count>shown)text.draw(image,L"+"+std::to_wstring(count-shown),
+        {startX,startY+badge,startX+shown*badge,startY+badge+18},12,settings.detailFont,settings.mutedColor);
+}
+
+Pixels raster_linear(const Status& current,bool vertical) {
+    Pixels result;result.bytes.resize(imageWidth*imageHeight*4);
+    if(current.wheel.empty())return result;
+    TextCanvas text;
+    const int count=static_cast<int>(current.wheel.size());
+    const int width=vertical?270:std::min(600,600/count);
+    const int height=vertical?std::min(72,520/count):106;
+    if(settings.showIcons){
+        std::vector<unsigned> ids{item_icons::menuSlotBase,item_icons::menuSelectionWide};
+        if(settings.showItemIcons)for(const auto& item:current.wheel)ids.push_back(item.iconId);
+        item_icons::prefetch(ids);
+    }
+    const int titleY=vertical?std::max(16,320-count*height/2-52):213;
+    text.draw(result,current.slotLabel,{vertical?350:40,titleY,vertical?620:600,titleY+33},
+        settings.centerSize,settings.fontFamily,settings.textColor);
+    for(int line=0;line<2;++line)for(int px=vertical?350:40;px<(vertical?620:600);++px)
+        blend_pixel(result,px,titleY+36+line,settings.accentColor,.55f);
+    for(int i=0;i<count;++i){
+        const int x=vertical?350:320-count*width/2+i*width;
+        const int y=vertical?320-count*height/2+i*height:267;
+        const bool selected=i==current.selected;
+        const auto color=selected?settings.selectedFillColor:settings.backgroundColor;
+        for(int py=y;py<y+height-4;++py)for(int px=x;px<x+width-4;++px)
+            blend_pixel(result,px,py,color,settings.wheelOpacity/100.f*(1.f-.18f*(py-y)/height));
+        if(selected){
+            if(const auto bar=item_icons::request(item_icons::menuSelectionWide))
+                draw_menu_sprite(result,*bar,x+3,y+height-15,width-10,10);
+            else for(int px=x;px<x+width-4;++px)blend_pixel(result,px,y+height-5,settings.selectionColor,.85f);
+        }else for(int px=x;px<x+width-4;++px)blend_pixel(result,px,y+height-5,settings.accentColor,.4f);
+        const auto& item=current.wheel[i];
+        draw_linear_icons(result,text,item,x,y,width,height,vertical);
+        text.draw(result,item.name,{x+(vertical?62:7),y+(vertical?6:47),x+width-(vertical?68:11),y+(vertical?height-20:height-24)},
+            settings.nameSize,settings.fontFamily,selected?settings.selectedTextColor:settings.textColor,
+            DT_CENTER|DT_WORDBREAK|DT_END_ELLIPSIS|DT_NOPREFIX);
+        if(settings.showCounts)text.draw(result,L"\u00d7 "+std::to_wstring(item.count),
+            {x+(vertical?62:7),y+height-23,x+width-(vertical?68:11),y+height-3},settings.countSize,settings.detailFont,settings.countColor);
+    }
+    const auto card=raster_card(current.name,current.count,current.indicatorLabel);
+    std::copy(card.bytes.begin()+indicatorRow*imageWidth*4,card.bytes.end(),result.bytes.begin()+indicatorRow*imageWidth*4);
+    return result;
+}
+
 bool png(const wchar_t* filename,const std::uint8_t* pixels,UINT width,UINT height,UINT stride) {
     const auto co=CoInitializeEx(nullptr,COINIT_MULTITHREADED);
     ComPtr<IWICImagingFactory> factory;
@@ -614,7 +706,9 @@ bool render(IDXGISwapChain* swapchain,const Status& current,float opacity) {
     if (completed<f.fence || (newTexture && completed<r.lastFence)) return false; // Never reset GPU work still in flight.
     if (FAILED(f.allocator->Reset()) || FAILED(r.commands->Reset(f.allocator.Get(),r.pipeline.Get()))) { r.failed=true; return false; }
     if (newTexture) {
-        auto image=current.wheelOpen?raster_wheel(current,false):raster_card(current.name,current.count,current.indicatorLabel);
+        auto image=current.wheelOpen?(settings.selectionLayout==0?raster_wheel(current,false):
+            raster_linear(current,settings.selectionLayout==2)):
+            raster_card(current.name,current.count,current.indicatorLabel);
         void* mapped{}; D3D12_RANGE noRead{0,0};
         if (FAILED(r.upload->Map(0,&noRead,&mapped))) { r.commands->Close(); return false; }
         for (UINT row=0;row<imageHeight;++row)
@@ -647,7 +741,7 @@ bool render(IDXGISwapChain* swapchain,const Status& current,float opacity) {
     r.commands->RSSetViewports(1,&viewport); r.commands->RSSetScissorRects(1,&scissor);
     r.commands->OMSetRenderTargets(1,&f.rtv,FALSE,nullptr);
     if(previewBackdrop){const float clear[]{.055f,.065f,.055f,1.f};r.commands->ClearRenderTargetView(f.rtv,clear,0,nullptr);}
-    if(current.wheelOpen) {
+    if(current.wheelOpen && settings.selectionLayout==0) {
         const auto geometry=wheel_geometry(current);
         if(geometry.size()>maxWheelVertices){r.commands->Close();return false;}
         void* mapped{};
@@ -909,6 +1003,8 @@ bool preview(const wchar_t* filename,Logger diagnostics,const Settings* options)
     wheel.wheel.push_back({L"Stormwing Bone Arrow",15,L'\u2191',0xD1C39A,L"PHYSICAL",effects::bit(effects::physical)});
     wheel.slotLabel=L"ARROW SLOT 1  2/3";wheel.selected=-1;++wheel.serial;
     if(!save(L".page.png",raster_wheel(wheel)))return false;
+    if(!save(L".strip.png",raster_linear(wheel,false)))return false;
+    if(!save(L".list.png",raster_linear(wheel,true)))return false;
     wheel.selected=1;++wheel.serial;if(!save(L".foreground.png",raster_wheel(wheel,false)))return false;
     Discovery probe;if(!probe.create(true))return false;
     capturedQueue.store(probe.queue.Get());previewBackdrop=true;

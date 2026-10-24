@@ -8,6 +8,7 @@
 #include "icon_archive.hpp"
 #include <array>
 #include <atomic>
+#include <cmath>
 #include <mutex>
 #include <unordered_set>
 
@@ -100,6 +101,10 @@ float4 ps(V v):SV_TARGET{return atlas.Sample(filter,v.uv);}
         context->Draw(3,0);context->CopyResource(readback.Get(),target.Get());
         D3D11_MAPPED_SUBRESOURCE mapped{};if(FAILED(context->Map(readback.Get(),0,D3D11_MAP_READ,0,&mapped)))return {};
         auto image=std::make_shared<Image>();image->rgba.resize(128*128*4);
+        image->contentWidth=std::max(1u,static_cast<unsigned>(std::round(w)));
+        image->contentHeight=std::max(1u,static_cast<unsigned>(std::round(h)));
+        image->contentX=(128-image->contentWidth)/2;
+        image->contentY=(128-image->contentHeight)/2;
         for(unsigned y=0;y<128;++y)std::memcpy(image->rgba.data()+y*128*4,static_cast<const std::uint8_t*>(mapped.pData)+y*mapped.RowPitch,128*4);
         context->Unmap(readback.Get(),0);return image;
     }

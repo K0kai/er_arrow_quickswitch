@@ -30,10 +30,11 @@ int main() {
     wchar_t binding[64]{};
     GetPrivateProfileStringW(L"Controls",L"Arrow1WheelKey",L"",binding,64,file.c_str());
     assert(std::wstring(binding)==L"Ctrl+Q");
-    s.indicatorTextColor=0xABCDEF;s.fontFamily=L"Georgia";s.wheelOffsetY=-75;s.showCounts=false;
+    s.indicatorTextColor=0xABCDEF;s.fontFamily=L"Georgia";s.wheelOffsetY=-75;s.showCounts=false;s.selectionLayout=2;
     assert(theme::save(file,s));
     const auto saved=theme::load(file);
     assert(saved.indicatorTextColor==0xABCDEF && saved.fontFamily==L"Georgia" && saved.wheelOffsetY==-75 && !saved.showCounts);
+    assert(saved.selectionLayout==2);
     GetPrivateProfileStringW(L"Controls",L"SettingsKey",L"",binding,64,file.c_str());
     assert(std::wstring(binding)==L"None");
     s=theme::load(file);

@@ -149,6 +149,10 @@ void panel(){
         ImGui::BeginChild("Options",ImVec2(0,-85));
         if(ImGui::BeginTabBar("Customization")){
             if(ImGui::BeginTabItem("Wheel")){
+                const char* layouts[]={"Radial wheel","Horizontal strip","Side list","Quick tap + hold strip"};
+                int layout=static_cast<int>(editing.selectionLayout);
+                if(ImGui::Combo("Selection design",&layout,layouts,4)){editing.selectionLayout=static_cast<unsigned>(layout);changed=true;}
+                ImGui::TextWrapped("Quick tap switches to the last ammo selected in this session. Hold opens the strip. Other designs select on release.");
                 changed|=slider("Size",editing.wheelScale,50,150,"%d%%");
                 changed|=slider("Surface opacity",editing.wheelOpacity,0,100,"%d%%");
                 changed|=ImGui::SliderInt("Horizontal position",&editing.wheelOffsetX,-600,600);

@@ -40,6 +40,11 @@ inline int selection(float dx,float dy,std::size_t count,float deadZone=78.f) {
     if(angle<0) angle+=2*pi;
     return static_cast<int>(std::floor((angle+pi/count)/(2*pi/count)))%static_cast<int>(count);
 }
+inline int linear_selection(float axis,std::size_t count,bool active,float extent=200.f) {
+    if(!count || !active)return -1;
+    const float position=std::clamp((axis+extent)/(2*extent),0.f,.99999f);
+    return static_cast<int>(position*count);
+}
 // Conservative visual hint from the active localized name. Unrecognized names stay neutral.
 struct Affinity { wchar_t badge; std::uint32_t color; const wchar_t* label; };
 inline Affinity damage_affinity(std::uint16_t physical,std::uint16_t magic,std::uint16_t fire,

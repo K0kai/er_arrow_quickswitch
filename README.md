@@ -10,6 +10,12 @@ mouse, and release to equip. The center cancels; scroll to change pages. Optiona
 controller bindings use the right stick for selection. An empty ammo slot can be
 filled through its wheel; that first selection ignores `CycleSameFamily`.
 
+The in-game settings panel offers four selection designs: radial wheel (default),
+horizontal strip, side list, and quick tap with a strip on hold. In quick tap mode,
+a brief press recalls the previous ammo selected for that slot during the current
+session; holding the key opens the strip. The choice is saved as
+`SelectionLayout=0..3` under `[Switching]` in the INI and applies without restarting.
+
 Press **F10** or **Back+Start** on an XInput controller for the settings panel powered by **Dear ImGui**. It includes wheel
 and indicator appearance, keyboard/controller bindings, sound and ammo filtering.
 Appearance changes preview immediately; save to keep settings and apply controls

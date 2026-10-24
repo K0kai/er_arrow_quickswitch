@@ -52,6 +52,8 @@ Additional `[Theme]` controls: `ContentBrightnessPercent=115` brightens text/art
 
 The mod reads each ammo item's icon ID from the live weapon parameters. A background worker reads the installed menu layout and texture, decompresses the container, decodes the BC texture, and caches a small image in memory. It reads only the named `menu/low/01_common` or `menu/hi/01_common` files and their relevant archive ranges. It does not unpack the game or write extracted pictures during play. New artwork may appear shortly after opening a wheel for the first time.
 
+The strip and list also request the game's `MENU_SlotBase.png` and `MENU_FL_Cursor_Wide.png` sprites from those installed menu atlases. The first is used around each ammo image; the second marks the selected entry. These sprites load through the same cache and respect the configured icon source directory. They are not packaged with the mod.
+
 Convergence and Reforged roots are detected from loaded native modules when possible. Loader/loose files and packed vanilla assets are also checked. If your replacement textures live elsewhere, choose the root containing the `menu` folder with `IconSourceDirectory` or the panel. Missing/unsupported artwork falls back to effect badges. No arrow/bolt artwork is shipped. An optional local `assets/wheel-game-icons.rgba` file supplies legacy damage/status badges; without it, the renderer uses fallback symbols. This game-derived sheet is not included in the source repository.
 
 ## Ammo indicator

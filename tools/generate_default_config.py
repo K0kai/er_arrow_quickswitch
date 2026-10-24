@@ -53,6 +53,7 @@ RequestTimeoutMs=3000
 ; 0 allows normal/great arrows or bolts/ballista bolts in the same wheel.
 ; 1 only offers ammo of the type currently equipped in that slot.
 CycleSameFamily=0
+SelectionLayout=0
 
 [Indicator]
 ; Enabled controls the whole overlay. ShowAmmoText hides only the text below the wheel.
