@@ -1,8 +1,16 @@
-# Unreleased
+# 0.6.3
+
+- Support Elden Ring 1.17.2 (executable 2.7.2.0), tested in-game on vanilla
+  and Reforged 2.3.7.1.
+- Correct the live HUD vtable guard for 1.17.2 and recognize empty ammo slots
+  whose handle is zero. Empty slots can be filled from a wheel, regardless of
+  CycleSameFamily; the setting applies again after ammo is equipped.
+- Convergence 3.0.3.0 does not yet have a release for Elden Ring 1.17.2.
+  Physical controller input remains untested in-game on 1.17.2.
+- Restore wheel opening and hover sound cues on 1.17.2 using the game's menu
+  event call; confirmed audible in Reforged 2.3.7.1.
 
 - Add a configurable controller chord to toggle the settings panel, defaulting to Back+Start.
-
-- Add experimental equipping into empty ammo slots, ignoring CycleSameFamily until ammo is equipped.
 
 - Keep the DLL filename stable as ArrowQuickSwitch.dll, with its version in Windows file details.
 

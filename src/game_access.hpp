@@ -58,11 +58,11 @@ struct Addresses {
         world=rip(find({0x48,0x8B,0x05,-1,-1,-1,-1,0x48,0x85,0xC0,0x74,0x0F,0x48,0x39,0x88}));
         const auto actual=find({0x41,0x8B,0xF1,0x49,0x8B,0xD8,0x48,0x63,0xEA,0x48,0x8B,0xF9});
         equip=actual ? actual-0x17 : 0;
-        hud=base()+0x776530;
+        hud=base()+0x7769E0;
         return gdm && params && world && equip && equal(equip,{0x40,0x53,0x55,0x56,0x57,0x41,0x56,0x48,0x81,0xEC,0x90,0,0,0}) &&
             equal(hud,{0x48,0x89,0x5C,0x24,0x10,0x48,0x89,0x6C,0x24,0x18,0x56,0x57,0x41,0x54,0x41,0x55,0x41,0x57}) &&
-            equal(base()+0x76B584,{0x48,0x8D,0x8F,0x60,0x4E,0,0,0x48,0x8D,0x97,0x70,0x4E,0,0}) &&
-            equal(base()+0x76B573,{0x49,0x89,0x1E,0xC6,0x41,0x78,0x03});
+            equal(base()+0x76BA34,{0x48,0x8D,0x8F,0x60,0x4E,0,0,0x48,0x8D,0x97,0x70,0x4E,0,0}) &&
+            equal(base()+0x76BA23,{0x49,0x89,0x1E,0xC6,0x41,0x78,0x03});
     }
 };
 
@@ -163,11 +163,11 @@ inline const Arrow* equipped_entry(const Snapshot& s,AmmoSlot slot){
     });
     return at==s.arrows.end()?nullptr:&*at;
 }
-// Only accept the explicit unequipped sentinel in all three equipment fields.
+// Accept the observed vanilla unequipped state; unknown partial mappings stay blocked.
 // Unknown IDs or partially cleared equipment remain inconsistent and blocked.
 inline bool empty_slot(const Snapshot& s,AmmoSlot slot){
     const auto i=slot_index(slot);
-    return s.slotIds[i]==empty_ammo_id && s.slotHandles[i]==0xFFFFFFFFu &&
+    return s.slotIds[i]==empty_ammo_id && s.slotHandles[i]==0 &&
         s.slotIndices[i]==0xFFFFFFFFu;
 }
 inline bool current_matches_slot(const Snapshot& s,AmmoSlot slot){
@@ -221,7 +221,7 @@ inline bool normal_gameplay(const Addresses& a,void* hudContext) {
     std::uintptr_t vtable{};
     std::uint8_t state{};
     // CSFeManImp embeds this HUD object at +0x4E60, confirmed in its constructor.
-    if (!read(fe,vtable) || vtable!=base()+0x2AA0A08 || !read(fe+0x78,state) || state!=3) return false;
+    if (!read(fe,vtable) || vtable!=base()+0x2AA2AF8 || !read(fe+0x78,state) || state!=3) return false;
     auto world=pointer(a.world);
     auto chr=world ? pointer(world+0x1E508) : 0;
     auto modules=chr ? pointer(chr+0x190) : 0;

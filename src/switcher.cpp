@@ -50,11 +50,11 @@ struct EquipmentSoundEvent {
     std::int32_t target=-1;
     std::int32_t category=3;
     std::int32_t padding=0;
-    void* vtable=nullptr;
+    const wchar_t* cueName=nullptr;
 };
 using EquipmentSoundFn=void(*)(EquipmentSoundEvent*);
 EquipmentSoundFn equipmentSound{};
-void* equipmentSoundVtable{};
+const wchar_t* equipmentSoundCue{};
 
 struct Config {
     input::Binding diagnostic{VK_F8,0},wheel{'1',0},settingsKey{VK_F10,0};
@@ -96,7 +96,7 @@ bool supported_version() {
     VS_FIXEDFILEINFO* info{}; UINT length{};
     if (!VerQueryValueW(bytes.data(),L"\\",reinterpret_cast<void**>(&info),&length) || length<sizeof(*info)) return false;
     return info->dwSignature==0xFEEF04BD && info->dwFileVersionMS==MAKELONG(7,2) &&
-        info->dwFileVersionLS==MAKELONG(0,1); // file 2.7.1.0 / application 1.17.1
+        info->dwFileVersionLS==MAKELONG(0,2); // file 2.7.2.0 / application 1.17.2
 }
 
 bool load_config() {
@@ -321,9 +321,9 @@ bool read_effects(std::uintptr_t weaponParam,std::uintptr_t effectParam,std::uin
 
 void play_wheel_sound(bool hover) {
     (void)hover;
-    if(!config.soundEnabled || !equipmentSound || !equipmentSoundVtable)return;
+    if(!config.soundEnabled || !equipmentSound || !equipmentSoundCue)return;
     EquipmentSoundEvent event{};
-    event.vtable=equipmentSoundVtable;
+    event.cueName=equipmentSoundCue;
     equipmentSound(&event);
 }
 void publish_wheel_page(const std::vector<indicator::WheelItem>& items,std::size_t page,int selected,AmmoSlot slot){
@@ -611,8 +611,8 @@ void hooked_hud(void* hud,float arg2,void* arg3) {
 DWORD WINAPI initialize(void*) {
     wchar_t path[32768]{}; GetModuleFileNameW(module,path,32768);
     folder=std::filesystem::path(path).parent_path();
-    log("ArrowQuickSwitch 0.6.2: paged ammo wheels and secondary-slot handle compatibility.");
-    if (!supported_version()) { log("Disabled: unsupported executable version (requires file 2.7.1.0 / game 1.17.1)."); return 0; }
+    log("ArrowQuickSwitch 0.6.3: Elden Ring 1.17.2 compatibility update.");
+    if (!supported_version()) { log("Disabled: unsupported executable version (requires file 2.7.2.0 / game 1.17.2)."); return 0; }
     wchar_t executable[32768]{};
     if(GetModuleFileNameW(nullptr,executable,32768))item_icons::initialize(std::filesystem::path(executable).parent_path(),log);
     if (!config_file::ensure(folder/L"ArrowQuickSwitch.ini"))
@@ -634,14 +634,15 @@ DWORD WINAPI initialize(void*) {
     }
     if (!addresses.resolve()) { log("Disabled: missing, ambiguous, or modified game signatures. No hook installed."); return 0; }
     {
-        constexpr std::uintptr_t soundRva=0x815D50, vtableRva=0x2A9EDD0;
+        constexpr std::uintptr_t soundRva=0x816200, callSiteRva=0x776DEA, cueRva=0x2AA2D40;
         const auto soundAddress=game::base()+soundRva;
-        const auto vtableAddress=game::base()+vtableRva;
-        std::uintptr_t firstVtableEntry{};
+        const auto callSite=game::base()+callSiteRva;
+        const auto cueAddress=game::base()+cueRva;
         if(game::equal(soundAddress,{0x40,0x53,0x48,0x83,0xEC,0x20,0x83,0x39,0x00,0x48,0x8B,0xD9}) &&
-            game::read(vtableAddress,firstVtableEntry) && firstVtableEntry>=game::base()){
+            game::equal(callSite,{0x48,0x8D,0x05,0x4F,0xBF,0x32,0x02,0xC7,0x44,0x24,0x28,0x10,0x27,0,0}) &&
+            game::rip(callSite)==cueAddress && game::equal(cueAddress,{0x46,0,0x45,0,0xB7,0x30})){
             equipmentSound=reinterpret_cast<EquipmentSoundFn>(soundAddress);
-            equipmentSoundVtable=reinterpret_cast<void*>(vtableAddress);
+            equipmentSoundCue=reinterpret_cast<const wchar_t*>(cueAddress);
             log("Wheel audio: game menu cue available.");
         }else log("Wheel audio disabled: game sound signature mismatch.");
     }

@@ -1,13 +1,14 @@
 # Arrow Wheel
 
-Four configurable arrow and bolt wheels for **Elden Ring 1.17.1** (executable
-2.7.1.0), loaded through **Mod Engine 3** for offline play. **Patch 1.17.2 is not
-supported.** The DLL checks the executable version before installing hooks.
+Four configurable arrow and bolt wheels for **Elden Ring 1.17.2** (executable
+2.7.2.0), loaded through **Mod Engine 3** for offline play. Version 0.6.3 was
+tested in-game on vanilla Elden Ring and Reforged 2.3.7.1.
+The DLL checks the executable version before installing hooks.
 
 Hold **1**, **2**, **3**, or **4** for the corresponding ammo slot, point with the
 mouse, and release to equip. The center cancels; scroll to change pages. Optional
-controller bindings use the right stick for selection. Equip ammo manually once
-in each slot you want to control.
+controller bindings use the right stick for selection. An empty ammo slot can be
+filled through its wheel; that first selection ignores `CycleSameFamily`.
 
 Press **F10** or **Back+Start** on an XInput controller for the settings panel powered by **Dear ImGui**. It includes wheel
 and indicator appearance, keyboard/controller bindings, sound and ammo filtering.
@@ -74,7 +75,7 @@ not part of the source repository. [Installation and compatibility details](docs
 build-release.cmd
 ```
 
-This rebuilds and tests the mod, then writes `release/ArrowQuickSwitch-0.6.2.zip`.
+This rebuilds and tests the mod, then writes `release/ArrowQuickSwitch-0.6.3.zip`.
 The ZIP contains the DLL, installation/customization documents and dependency
 licenses under `licenses/`. It excludes the user's INI. An optional local legacy
 badge sheet is included if present; source builds work without it, using fallback

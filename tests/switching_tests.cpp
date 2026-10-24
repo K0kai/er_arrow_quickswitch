@@ -102,7 +102,8 @@ int main() {
     for(std::size_t i=0;i<4;++i){
         const auto slot=static_cast<AmmoSlot>(i);
         const auto oldId=s.slotIds[i],oldHandle=s.slotHandles[i],oldIndex=s.slotIndices[i];
-        s.slotIds[i]=s.slotHandles[i]=s.slotIndices[i]=0xFFFFFFFFu;
+        s.slotIds[i]=s.slotIndices[i]=0xFFFFFFFFu;
+        s.slotHandles[i]=0;
         put(player,id_offset(slot),s.slotIds[i]);
         put(player,handle_offset(slot),s.slotHandles[i]);
         put(player,index_offset(slot),s.slotIndices[i]);
@@ -150,7 +151,7 @@ int main() {
     auto worldPtr=reinterpret_cast<std::uintptr_t>(world.data());
     put(character,0x190,reinterpret_cast<std::uintptr_t>(&bag));
     put(world,0x1E508,reinterpret_cast<std::uintptr_t>(character.data()));
-    put(fe,0,game::base()+0x2AA0A08); put(fe,0x78,std::uint8_t(3));
+    put(fe,0,game::base()+0x2AA2AF8); put(fe,0x78,std::uint8_t(3));
     put(stats,0x138,std::int32_t(100));
     a.world=reinterpret_cast<std::uintptr_t>(&worldPtr);
     void* hud=fe.data()+0x4E60;

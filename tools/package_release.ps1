@@ -23,6 +23,7 @@ $files = [ordered]@{
     'licenses\MinHook-LICENSE.txt' = Join-Path $root 'dist\MinHook-LICENSE.txt'
     'README_INSTALL.txt' = Join-Path $root 'docs\RELEASE_INSTALL.txt'
     'CUSTOMIZATION.md' = Join-Path $root 'docs\THEMING.md'
+    'CHANGELOG.md' = Join-Path $root 'docs\CHANGELOG.md'
     'licenses\miniz-LICENSE.txt' = Join-Path $root 'third_party\miniz\LICENSE'
     'licenses\ImGui-LICENSE.txt' = Join-Path $root 'third_party\imgui\LICENSE.txt'
 }
@@ -72,7 +73,13 @@ try {
             try { $actualHash = [System.BitConverter]::ToString($hasher.ComputeHash($stream)).Replace('-', '') }
             finally { $stream.Dispose(); $hasher.Dispose() }
             $stagedFile = Join-Path $stage $entry.FullName.Replace('/', '\')
-            if ($actualHash -ne (Get-FileHash -LiteralPath $stagedFile -Algorithm SHA256).Hash) {
+            $stagedHasher = [System.Security.Cryptography.SHA256]::Create()
+            try {
+                $stagedStream = [System.IO.File]::OpenRead($stagedFile)
+                try { $stagedHash = [System.BitConverter]::ToString($stagedHasher.ComputeHash($stagedStream)).Replace('-', '') }
+                finally { $stagedStream.Dispose() }
+            } finally { $stagedHasher.Dispose() }
+            if ($actualHash -ne $stagedHash) {
                 throw "ZIP integrity check failed: $($entry.FullName)"
             }
         }
