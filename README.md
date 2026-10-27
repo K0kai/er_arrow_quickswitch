@@ -10,7 +10,13 @@ mouse, and release to equip. The center cancels; scroll to change pages. Optiona
 controller bindings use the right stick for selection. An empty ammo slot can be
 filled through its wheel; that first selection ignores `CycleSameFamily`.
 
-The in-game settings panel offers four selection designs: radial wheel (default),
+**Release availability:** the `main` branch and the released **0.6.3** version
+include the radial wheel only. The horizontal strip, side list, and quick tap
+mode are unreleased features on the
+[`feature/selection-layouts`](https://github.com/K0kai/er_arrow_quickswitch/tree/feature/selection-layouts)
+branch. Build that branch to try them; they are not included in the 0.6.3 download.
+
+On this feature branch, the in-game settings panel offers four selection designs: radial wheel (default),
 horizontal strip, side list, and quick tap with a strip on hold. In quick tap mode,
 a brief press recalls the previous ammo selected for that slot during the current
 session; holding the key opens the strip. The choice is saved as
