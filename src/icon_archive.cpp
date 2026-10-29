@@ -120,15 +120,21 @@ bool Archive::unpack(Bytes& bytes) {
 }
 bool Archive::read(const std::string& relative,Bytes& bytes) {
     bytes.clear();
+    source_="none";
     try{
         if(relative!="menu/low/01_common.tpf.dcx" && relative!="menu/low/01_common.sblytbnd.dcx" &&
            relative!="menu/hi/01_common.tpf.dcx" && relative!="menu/hi/01_common.sblytbnd.dcx")return false;
         const auto path=std::filesystem::path(relative);
         // Explicit mod root first, then ME3's filesystem redirection, loose
         // game assets, and finally the packed vanilla archive.
-        if((!overrideRoot_.empty() && disk(overrideRoot_/path,bytes)) || disk(path,bytes) || disk(gameRoot_/path,bytes) || packed(relative,bytes)){
-            if(unpack(bytes))return true;
-        }
+        const auto try_source=[&](bool found,const char* label){
+            if(found && unpack(bytes)){source_=label;return true;}
+            bytes.clear();return false;
+        };
+        if(!overrideRoot_.empty() && try_source(disk(overrideRoot_/path,bytes),"explicit or detected mod root"))return true;
+        if(try_source(disk(path,bytes),"working directory or loader override"))return true;
+        if(try_source(disk(gameRoot_/path,bytes),"loose game asset"))return true;
+        if(try_source(packed(relative,bytes),"packed Data0 archive"))return true;
     }catch(const std::exception&){}
     bytes.clear();return false;
 }

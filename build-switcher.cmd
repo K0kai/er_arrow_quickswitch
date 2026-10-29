@@ -1,6 +1,6 @@
 @echo off
 setlocal
-set "AQS_VERSION=0.6.3"
+set "AQS_VERSION=0.7.0"
 set "AQS_DLL_NAME=ArrowQuickSwitch.dll"
 set "AQS_ICON_OBJECTS=icon_archive.obj item_icons.obj miniz_tinfl.obj"
 set "AQS_ICON_LIBS=d3d11.lib bcrypt.lib"

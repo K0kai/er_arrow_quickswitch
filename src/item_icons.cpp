@@ -124,13 +124,19 @@ public:
             const std::string prefix="menu/"+source.quality+"/01_common";
             if(!source.tried){
                 source.tried=true;Bytes layout;
-                if(archive.read(prefix+".sblytbnd.dcx",layout))source.layout=parse_layout(layout);
+                if(archive.read(prefix+".sblytbnd.dcx",layout)){
+                    source.layout=parse_layout(layout);
+                    if(log)log("Item icons: %s layout source: %s.",source.quality.c_str(),archive.source());
+                }
                 if(log)log("Item icons: %s layout contains %zu entries.",source.quality.c_str(),source.layout.size());
             }
             const auto found=source.layout.find(id);if(found==source.layout.end())continue;
             const auto& rect=found->second;
             if(!source.textures.contains(rect.atlas)){
-                if(source.tpf.empty() && !archive.read(prefix+".tpf.dcx",source.tpf))continue;
+                if(source.tpf.empty()){
+                    if(!archive.read(prefix+".tpf.dcx",source.tpf))continue;
+                    if(log)log("Item icons: %s texture source: %s.",source.quality.c_str(),archive.source());
+                }
                 const auto dds=tpf_texture(source.tpf,rect.atlas);unsigned width{},height{};
                 auto texture=decoder.texture(dds,width,height);
                 source.sizes[rect.atlas]={width,height};source.textures[rect.atlas]=std::move(texture);

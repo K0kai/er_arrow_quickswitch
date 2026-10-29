@@ -7,6 +7,12 @@
 #include <mutex>
 
 namespace arrow_switch::window_input {
+inline bool consume_camera_motion(RAWMOUSE& mouse,bool active){
+    if(!active || (mouse.usFlags&MOUSE_MOVE_ABSOLUTE))return false;
+    mouse.lLastX=0;
+    mouse.lLastY=0;
+    return true;
+}
 // Current button states only: no character messages, text buffers or event log.
 struct State {
     std::array<bool,256> held{};

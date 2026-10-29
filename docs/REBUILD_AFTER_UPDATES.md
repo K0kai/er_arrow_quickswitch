@@ -16,7 +16,7 @@ changes to equipment, message or parameter structures may need an adapter.
 
 ## If Elden Ring updates
 
-Version 0.6.3 supports Elden Ring **1.17.2**, executable **2.7.2.0**. The DLL refuses
+Version 0.7.0 targets Elden Ring **1.17.2**, executable **2.7.2.0**. The DLL refuses
 other executable versions. Recompiling or changing the version check alone does
 not establish compatibility.
 

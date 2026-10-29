@@ -8,12 +8,14 @@ namespace arrow_switch::item_icons {
 class Archive {
     std::filesystem::path gameRoot_,overrideRoot_;
     Bytes header_;
+    const char* source_="none";
     bool index();
     bool packed(const std::string& relative,Bytes& result);
 public:
     Archive(std::filesystem::path gameRoot,std::filesystem::path overrideRoot={}):
         gameRoot_(std::move(gameRoot)),overrideRoot_(std::move(overrideRoot)){}
     bool read(const std::string& relative,Bytes& result);
+    const char* source() const { return source_; }
     bool unpack(Bytes& bytes);
 };
 }

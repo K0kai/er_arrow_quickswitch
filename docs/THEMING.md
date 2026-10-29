@@ -6,6 +6,10 @@ The Behavior tab controls ammo filtering, sound, and the keyboard settings short
 
 The mod creates its INI on first launch and adds missing options after updates. Keep your existing INI when updating. Appearance, audio, ammo filtering, and the settings shortcut also reload after external edits within about half a second while no wheel or equip request is active.
 
+The optional `[Switching] TapHoldCycle=1` changes the dedicated wheel bindings: a tap equips the next eligible ammunition, and a hold of at least `TapHoldThresholdMs` (default 220) opens the wheel. This tap action also replaces the quick strip's previous-ammo tap while the option is enabled. These bindings still reach the game, so choose keys or controller chords that do not already trigger an ammunition action. Restart after changing these two keys. A pending switch is cancelled when gameplay or focus is lost.
+
+The keyboard-opened radial wheel consumes relative mouse movement for selection, so that movement does not also turn the camera. This is enabled by default. Clear **Block camera while selecting with mouse** in the Wheel tab, or set `[Switching] BlockCameraWhileSelecting=0`, to allow normal camera movement. The setting reloads after the wheel closes. Strip and list styles keep normal camera movement. Two experimental options are available for offline testing on the supported executable. `[Controller] ExperimentalNativeCameraSelection=1` lets a keyboard-opened radial wheel use the game's camera input vector; XInput-opened wheels continue to use XInput. `[Switching] ExperimentalNativeHudFeedback=1` requests the game's quick-item HUD flash and visibility flag after a verified ammunition switch. The exact visual behavior for ammunition remains unverified in game. Both options default to `0` and require a restart.
+
 ## Rebinding controls
 
 In the Controls tab, click the current binding and press the desired key or mouse
@@ -25,7 +29,7 @@ These keys belong in `[Theme]`. Colors use `#RRGGBB`. Positions and font sizes u
 
 | Keys | Defaults | Purpose |
 | --- | --- | --- |
-| `WheelScalePercent`, `WheelOpacityPercent` | `100`, `72` | Size (50–150%) and surface opacity (0–100%). |
+| `WheelScalePercent`, `WheelOpacityPercent` | `100`, `84` | Size (50–150%) and surface opacity (0–100%). |
 | `OffsetX`, `OffsetY` | `0`, `0` | Position; negative moves left/up. |
 | `BackgroundColor`, `SelectedFillColor` | `#141815`, `#49402D` | Wedge and selected fill. |
 | `AccentColor`, `SelectionColor` | `#A18C61`, `#E1C484` | Borders and selection marker/outlines. |

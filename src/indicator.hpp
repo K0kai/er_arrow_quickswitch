@@ -10,7 +10,7 @@ struct Settings {
     unsigned selectionLayout=0; // 0 wheel, 1 strip, 2 list, 3 quick tap with strip on hold
     bool enabled=true,alwaysShow=false;
     unsigned duration=3500,scale=100,left=40,bottom=240;
-    unsigned wheelOpacity=72, cancelRadius=78, selectionColor=0xE1C484, accentColor=0xA18C61;
+    unsigned wheelOpacity=84, cancelRadius=78, selectionColor=0xE1C484, accentColor=0xA18C61;
     unsigned wheelScale=100, backgroundColor=0x141815, selectedFillColor=0x49402D;
     unsigned textColor=0xF4EBD6, mutedColor=0xBDB49F, countColor=0xD9CFB9, selectedTextColor=0xFFE6A6;
     unsigned nameSize=18, countSize=16, effectSize=11, centerSize=22;
@@ -19,6 +19,7 @@ struct Settings {
     unsigned indicatorTextColor=0xF4EBD6, fadeIn=180, fadeOut=600;
     int wheelOffsetX=0,wheelOffsetY=0,indicatorOffsetX=0,indicatorOffsetY=0;
     bool showIcons=true,showEffectIcons=true,showEffectLabels=false,showCounts=true,showIndicator=true,textShadow=true,showMarker=true;
+    bool blockCameraWhileSelecting=true;
     bool showItemIcons=true;
     unsigned itemIconScale=100;
     unsigned contentBrightness=115,selectionGlow=70,iconBackdrop=45;

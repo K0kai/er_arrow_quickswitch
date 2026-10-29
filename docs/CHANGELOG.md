@@ -1,3 +1,14 @@
+# 0.7.0
+
+- Add radial, horizontal strip, side list, and quick strip selection designs.
+- Add optional tap-to-cycle and hold-to-open controls, with per-style release behavior.
+- Keep the camera still during mouse selection in the radial wheel by default; allow disabling this in settings.
+- Improve text clarity, item-artwork filtering, wheel contrast, and selection-marker edges.
+- Cache wheel metadata for faster repeated opening and log slow opening phases.
+- Improve icon-source fallback and report which source supplied artwork.
+- Add confirmation feedback after a verified equipment change. Native HUD and camera-input experiments remain optional and disabled by default.
+- Preserve existing INI values and add missing settings automatically. Automated build and graphics checks pass; broader in-game validation remains open.
+
 # 0.6.3
 
 - Support Elden Ring 1.17.2 (executable 2.7.2.0), tested in-game on vanilla

@@ -23,6 +23,7 @@ std::atomic<bool> panelEnabled{true};
 std::recursive_mutex mutex;
 std::filesystem::path config;
 ImGuiContext* context{};
+ImFont* overlayFont{};
 HWND window{};WNDPROC originalProc{};
 Cursor cursor;
 bool synchronized=false,dirty=false,sameFamily=false,audio=true,ready=false;
@@ -152,6 +153,8 @@ void panel(){
                 const char* layouts[]={"Radial wheel","Horizontal strip","Side list","Quick tap + hold strip"};
                 int layout=static_cast<int>(editing.selectionLayout);
                 if(ImGui::Combo("Selection design",&layout,layouts,4)){editing.selectionLayout=static_cast<unsigned>(layout);changed=true;}
+                changed|=ImGui::Checkbox("Block camera while selecting with mouse",&editing.blockCameraWhileSelecting);
+                ImGui::TextWrapped("Applies to the radial wheel opened from the keyboard. The other designs keep normal camera movement.");
                 ImGui::TextWrapped("Quick tap switches to the last ammo selected in this session. Hold opens the strip. Other designs select on release.");
                 ImGui::TextWrapped("List and strip: scroll to select one item at a time; pages change automatically. Controller next/previous bindings step items.");
                 changed|=slider("Size",editing.wheelScale,50,150,"%d%%");
@@ -327,6 +330,11 @@ bool install(HWND hwnd,ID3D12Device* device,ID3D12CommandQueue* queue,unsigned f
     const auto fontPath=std::filesystem::path(windows)/L"Fonts/segoeui.ttf";
     char utf8[4096]{};WideCharToMultiByte(CP_UTF8,0,fontPath.c_str(),-1,utf8,4096,nullptr,nullptr);
     if(GetFileAttributesW(fontPath.c_str())!=INVALID_FILE_ATTRIBUTES)io.Fonts->AddFontFromFileTTF(utf8,16.f);
+    const auto overlayPath=std::filesystem::path(windows)/L"Fonts/pala.ttf";
+    char overlayUtf8[4096]{};WideCharToMultiByte(CP_UTF8,0,overlayPath.c_str(),-1,overlayUtf8,4096,nullptr,nullptr);
+    if(GetFileAttributesW(overlayPath.c_str())!=INVALID_FILE_ATTRIBUTES)
+        overlayFont=io.Fonts->AddFontFromFileTTF(overlayUtf8,40.f);
+    if(!overlayFont)overlayFont=io.Fonts->AddFontDefault();
     ImGui::StyleColorsDark();auto& style=ImGui::GetStyle();style.WindowRounding=7;style.FrameRounding=4;
     style.WindowPadding=ImVec2(14,14);style.ItemSpacing=ImVec2(9,8);
     style.Colors[ImGuiCol_WindowBg]=ImVec4(.055f,.065f,.055f,.98f);
@@ -354,17 +362,20 @@ bool install(HWND hwnd,ID3D12Device* device,ID3D12CommandQueue* queue,unsigned f
     if(!ready){ImGui_ImplDX12_Shutdown();ImGui_ImplWin32_Shutdown();ImGui::DestroyContext(context);context=nullptr;}
     ImGui::SetCurrentContext(previous);return ready;
 }
-void render(ID3D12GraphicsCommandList* commands){
-    std::lock_guard<std::recursive_mutex> guard(mutex);if(!ready || !visible.load())return;
-    update_capture();
-    Context current;auto& io=ImGui::GetIO();io.MouseDrawCursor=true;
-    ImGui_ImplDX12_NewFrame();ImGui_ImplWin32_NewFrame();ImGui::NewFrame();panel();ImGui::Render();
+void render(ID3D12GraphicsCommandList* commands,OverlayDraw overlay,void* data){
+    std::lock_guard<std::recursive_mutex> guard(mutex);if(!ready || (!visible.load() && !overlay))return;
+    if(visible.load())update_capture();
+    Context current;auto& io=ImGui::GetIO();io.MouseDrawCursor=visible.load();
+    ImGui_ImplDX12_NewFrame();ImGui_ImplWin32_NewFrame();ImGui::NewFrame();
+    if(overlay)overlay(ImGui::GetBackgroundDrawList(),overlayFont,data);
+    if(visible.load())panel();
+    ImGui::Render();
     ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(),commands);
 }
 void shutdown(){
     std::lock_guard<std::recursive_mutex> guard(mutex);if(!context)return;
     Context current;
     ImGui_ImplDX12_Shutdown();ImGui_ImplWin32_Shutdown();ImGui::DestroyContext(context);
-    current.previous=nullptr;context=nullptr;ready=false;
+    current.previous=nullptr;context=nullptr;overlayFont=nullptr;ready=false;
 }
 }

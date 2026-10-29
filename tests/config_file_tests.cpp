@@ -18,6 +18,7 @@ int main() {
         assert(std::wstring(actual) == setting.value);
     }
     assert(GetPrivateProfileIntW(L"Switching", L"CycleSameFamily", -1, path.c_str()) == 0);
+    assert(GetPrivateProfileIntW(L"Switching", L"BlockCameraWhileSelecting", -1, path.c_str()) == 1);
     wchar_t value[128]{};
     GetPrivateProfileStringW(L"Meta", L"ConfigVersion", L"", value, 128, path.c_str());
     assert(std::wstring(value) == default_config::version);

@@ -7,6 +7,7 @@
 #include "settings_ui.hpp"
 #include "theme_config.hpp"
 #include "text_layout.hpp"
+#include "../third_party/imgui/imgui.h"
 #include <MinHook.h>
 #include <d3d12.h>
 #include <dxgi1_4.h>
@@ -18,6 +19,7 @@
 #include <atomic>
 #include <bit>
 #include <cmath>
+#include <cfloat>
 #include <cstring>
 #include <filesystem>
 #include <mutex>
@@ -32,6 +34,7 @@ Settings settings;
 Settings pendingSettings;
 bool settingsPending=false;
 bool previewBackdrop=false;
+bool suppressRasterText=false;
 Logger logger{};
 HMODULE owner{};
 std::atomic<bool> gameplay{};
@@ -106,16 +109,44 @@ void blend_pixel(Pixels& image,int x,int y,unsigned color,float alpha) {
     }
     image.bytes[p+3]=static_cast<std::uint8_t>(alpha*255+image.bytes[p+3]*(1-alpha));
 }
+void blend_scaled(Pixels& target,int x,int y,const std::uint8_t* source,
+                  unsigned stride,unsigned sourceX,unsigned sourceY,unsigned sourceWidth,unsigned sourceHeight,
+                  int destX,int destY,int destWidth,int destHeight,unsigned tint=0xFFFFFFFFu) {
+    if(destWidth<=0 || destHeight<=0 || !sourceWidth || !sourceHeight)return;
+    const float fx=(x-destX+.5f)*sourceWidth/destWidth-.5f;
+    const float fy=(y-destY+.5f)*sourceHeight/destHeight-.5f;
+    const int x0=std::clamp(static_cast<int>(std::floor(fx)),0,static_cast<int>(sourceWidth)-1);
+    const int y0=std::clamp(static_cast<int>(std::floor(fy)),0,static_cast<int>(sourceHeight)-1);
+    const int x1=std::min(x0+1,static_cast<int>(sourceWidth)-1);
+    const int y1=std::min(y0+1,static_cast<int>(sourceHeight)-1);
+    const float wx=std::clamp(fx-x0,0.f,1.f),wy=std::clamp(fy-y0,0.f,1.f);
+    const float weights[4]={(1-wx)*(1-wy),wx*(1-wy),(1-wx)*wy,wx*wy};
+    const int xs[4]={x0,x1,x0,x1},ys[4]={y0,y0,y1,y1};
+    float alpha=0,rgb[3]{};
+    for(int i=0;i<4;++i){
+        const auto p=(static_cast<std::size_t>(sourceY+ys[i])*stride+sourceX+xs[i])*4;
+        const float a=source[p+3]/255.f*weights[i];alpha+=a;
+        for(int c=0;c<3;++c)rgb[c]+=source[p+c]*a;
+    }
+    if(alpha<=0)return;
+    const auto channel=[&](int index){return static_cast<unsigned>(std::clamp(rgb[index]/alpha,0.f,255.f));};
+    const unsigned color=tint==0xFFFFFFFFu?
+        (channel(0)<<16)|(channel(1)<<8)|channel(2):tint;
+    blend_pixel(target,x,y,color,alpha);
+}
 // GDI supplies a grayscale glyph mask; tint and shadow are composed explicitly
 // into premultiplied RGBA. Text opacity is independent of the wheel surfaces.
 struct TextCanvas {
+    static constexpr LONG sampleScale=2;
+    static constexpr LONG maskWidth=imageWidth*sampleScale;
+    static constexpr LONG maskHeight=imageHeight*sampleScale;
     HDC dc=CreateCompatibleDC(nullptr);
     HBITMAP bitmap{};
     HGDIOBJ oldBitmap{};
     void* memory{};
     TextCanvas() {
         BITMAPINFO info{};info.bmiHeader.biSize=sizeof(BITMAPINFOHEADER);
-        info.bmiHeader.biWidth=imageWidth;info.bmiHeader.biHeight=-static_cast<LONG>(imageHeight);
+        info.bmiHeader.biWidth=maskWidth;info.bmiHeader.biHeight=-maskHeight;
         info.bmiHeader.biPlanes=1;info.bmiHeader.biBitCount=32;info.bmiHeader.biCompression=BI_RGB;
         if(dc)bitmap=CreateDIBSection(dc,&info,DIB_RGB_COLORS,&memory,nullptr,0);
         if(bitmap){oldBitmap=SelectObject(dc,bitmap);SetBkMode(dc,TRANSPARENT);SetTextColor(dc,RGB(255,255,255));}
@@ -131,26 +162,34 @@ struct TextCanvas {
     }
     void draw(Pixels& image,const std::wstring& text,RECT rect,unsigned size,const std::wstring& family,
               unsigned color,UINT flags=DT_CENTER|DT_SINGLELINE|DT_VCENTER|DT_END_ELLIPSIS|DT_NOPREFIX) {
-        if(!memory || text.empty())return;
+        if(!memory || text.empty() || suppressRasterText)return;
         if(flags&DT_WORDBREAK)flags|=DT_EDITCONTROL;
         rect.left=std::clamp(rect.left,0L,static_cast<LONG>(imageWidth));
         rect.right=std::clamp(rect.right,rect.left,static_cast<LONG>(imageWidth));
         rect.top=std::clamp(rect.top,0L,static_cast<LONG>(imageHeight));
         rect.bottom=std::clamp(rect.bottom,rect.top,static_cast<LONG>(imageHeight));
+        const RECT maskRect{rect.left*sampleScale,rect.top*sampleScale,
+            rect.right*sampleScale,rect.bottom*sampleScale};
         auto* mask=static_cast<std::uint8_t*>(memory);
-        for(LONG y=rect.top;y<rect.bottom;++y)
-            std::memset(mask+(static_cast<std::size_t>(y)*imageWidth+rect.left)*4,0,(rect.right-rect.left)*4);
-        HFONT font=create_text_font(size,family);
+        for(LONG y=maskRect.top;y<maskRect.bottom;++y)
+            std::memset(mask+(static_cast<std::size_t>(y)*maskWidth+maskRect.left)*4,0,
+                (maskRect.right-maskRect.left)*4);
+        HFONT font=create_text_font(size*sampleScale,family);
         const auto previous=SelectObject(dc,font?font:GetStockObject(DEFAULT_GUI_FONT));
-        DrawTextW(dc,text.c_str(),-1,&rect,flags);GdiFlush();
+        RECT drawRect=maskRect;
+        DrawTextW(dc,text.c_str(),-1,&drawRect,flags);GdiFlush();
         const auto ink=[&](LONG x,LONG y){
             if(x<rect.left||x>=rect.right||y<rect.top||y>=rect.bottom)return 0.f;
-            const auto p=(static_cast<std::size_t>(y)*imageWidth+x)*4;
-            return std::max({mask[p],mask[p+1],mask[p+2]})/255.f;
+            unsigned total=0;
+            for(LONG sy=0;sy<sampleScale;++sy)for(LONG sx=0;sx<sampleScale;++sx){
+                const auto p=(static_cast<std::size_t>(y*sampleScale+sy)*maskWidth+x*sampleScale+sx)*4;
+                total+=std::max({mask[p],mask[p+1],mask[p+2]});
+            }
+            return total/(255.f*sampleScale*sampleScale);
         };
         if(settings.textShadow)for(LONG y=rect.top-1;y<=rect.bottom+1;++y)for(LONG x=rect.left-1;x<=rect.right+1;++x){
             const float shadow=std::max({ink(x-1,y-1),ink(x,y-1),ink(x+1,y-1),ink(x-1,y),ink(x+1,y),ink(x,y+1)});
-            if(shadow>0)blend_pixel(image,x,y,0x070907,shadow*.90f);
+            if(shadow>0)blend_pixel(image,x,y,0x070907,shadow*.68f);
         }
         for(LONG y=rect.top;y<rect.bottom;++y)for(LONG x=rect.left;x<rect.right;++x){
             const auto coverage=ink(x,y);if(coverage>0)blend_pixel(image,x,y,color,coverage);
@@ -246,13 +285,9 @@ int icon_index(const std::wstring& effect) {
 void draw_menu_sprite(Pixels& image,const item_icons::Image& sprite,int x,int y,int width,int height,unsigned tint=0xFFFFFFFFu){
     if(width<=0 || height<=0)return;
     for(int py=0;py<height;++py)for(int px=0;px<width;++px){
-        const unsigned sx=sprite.contentX+px*sprite.contentWidth/width;
-        const unsigned sy=sprite.contentY+py*sprite.contentHeight/height;
-        const auto source=(static_cast<std::size_t>(sy)*sprite.width+sx)*4;
-        if(source+3>=sprite.rgba.size())continue;
-        const auto& rgba=sprite.rgba;
-        const unsigned color=tint==0xFFFFFFFFu?(rgba[source]<<16)|(rgba[source+1]<<8)|rgba[source+2]:tint;
-        blend_pixel(image,x+px,y+py,color,rgba[source+3]/255.f);
+        blend_scaled(image,x+px,y+py,sprite.rgba.data(),sprite.width,
+            sprite.contentX,sprite.contentY,sprite.contentWidth,sprite.contentHeight,
+            x,y,width,height,tint);
     }
 }
 void draw_bundle_fallback(Pixels& image,int x,int y,int width,int height,unsigned color){
@@ -326,8 +361,10 @@ Pixels raster_wheel(const Status& current,bool background=true) {
                 const auto source=(static_cast<std::size_t>(iy)*64+ix)*4;
                 const unsigned color=(selectionImage[source]<<16)|(selectionImage[source+1]<<8)|selectionImage[source+2];
                 blend_pixel(result,x,y,color,selectionImage[source+3]/255.f);
-            }else if(localV>=-14 && localV<=13 && std::abs(localU)<=(localV<0?11+localV*.75f:localV<5?4.f:2.f)){
-                blend_pixel(result,x,y,settings.selectionColor,1.f);
+            }else{
+                const float halfWidth=localV<0?11+localV*.75f:localV<5?4.f:2.f;
+                const float edge=std::min({localV+14.5f,13.5f-localV,halfWidth+.5f-std::abs(localU)});
+                if(edge>0)blend_pixel(result,x,y,settings.selectionColor,std::min(1.f,edge));
             }
         }
     }
@@ -361,10 +398,8 @@ Pixels raster_wheel(const Status& current,bool background=true) {
         if(artwork){
             const int size=static_cast<int>(64*settings.itemIconScale/100);
             for(int y=0;y<size;++y)for(int x=0;x<size;++x){
-                const auto source=(static_cast<std::size_t>(y*artwork->height/size)*artwork->width+x*artwork->width/size)*4;
-                const auto& rgba=artwork->rgba;
-                const unsigned color=(rgba[source]<<16)|(rgba[source+1]<<8)|rgba[source+2];
-                blend_pixel(result,cx-size/2+x,cy-39-size/2+y,color,rgba[source+3]/255.f);
+                blend_scaled(result,cx-size/2+x,cy-39-size/2+y,artwork->rgba.data(),artwork->width,
+                    0,0,artwork->width,artwork->height,cx-size/2,cy-39-size/2,size,size);
             }
         }
         const bool icons=settings.showEffectIcons && atlas.size()==768*64*4 && (item.iconsMask || icon_index(item.effect)>=0);
@@ -501,6 +536,113 @@ Pixels raster_linear(const Status& current,bool vertical) {
     return result;
 }
 
+struct OverlayText {
+    const Status* current;
+    Layout placement;
+    float opacity;
+};
+std::string utf8(const std::wstring& value){
+    if(value.empty())return {};
+    const int bytes=WideCharToMultiByte(CP_UTF8,0,value.data(),static_cast<int>(value.size()),nullptr,0,nullptr,nullptr);
+    if(bytes<=0)return {};
+    std::string result(static_cast<std::size_t>(bytes),'\0');
+    WideCharToMultiByte(CP_UTF8,0,value.data(),static_cast<int>(value.size()),result.data(),bytes,nullptr,nullptr);
+    return result;
+}
+void draw_overlay_text(ImDrawList* list,ImFont* font,const OverlayText& overlay,
+                       const std::wstring& value,float cx,float y,float maxWidth,float height,
+                       unsigned size,unsigned color,bool wrap=true){
+    if(!font || value.empty())return;
+    auto text=utf8(value);if(text.empty())return;
+    const float scale=overlay.placement.wheel.width/640.f;
+    const float pixelSize=size*scale*1.12f;
+    const float width=maxWidth*scale;
+    const float wrapWidth=wrap?width:0.f;
+    auto measured=font->CalcTextSizeA(pixelSize,FLT_MAX,wrapWidth,text.c_str());
+    if(measured.x>width || measured.y>height*scale){
+        auto shortened=text;
+        while(!shortened.empty()){
+            while(!shortened.empty() &&
+                (static_cast<unsigned char>(shortened.back())&0xC0)==0x80)shortened.pop_back();
+            if(!shortened.empty())shortened.pop_back();
+            text=shortened+"...";
+            measured=font->CalcTextSizeA(pixelSize,FLT_MAX,wrapWidth,text.c_str());
+            if(measured.x<=width && measured.y<=height*scale)break;
+        }
+    }
+    const float x=overlay.placement.wheel.x+cx*scale-measured.x*.5f;
+    const float top=overlay.placement.wheel.y+y*scale;
+    list->PushClipRect({overlay.placement.wheel.x+(cx-maxWidth*.5f)*scale,top},
+        {overlay.placement.wheel.x+(cx+maxWidth*.5f)*scale,top+height*scale},true);
+    const ImU32 tint=IM_COL32((color>>16)&255,(color>>8)&255,color&255,
+        static_cast<int>(std::clamp(overlay.opacity,0.f,1.f)*255));
+    list->AddText(font,pixelSize,{x,top},tint,text.c_str(),nullptr,wrapWidth);
+    list->PopClipRect();
+}
+void draw_overlay(ImDrawList* list,ImFont* font,void* data){
+    const auto& overlay=*static_cast<const OverlayText*>(data);
+    const auto& current=*overlay.current;
+    if(current.wheelOpen && !current.wheel.empty()){
+        const int count=static_cast<int>(current.wheel.size());
+        if(settings.selectionLayout==0){
+            constexpr double pi=3.14159265358979323846;
+            for(int i=0;i<count;++i){
+                const auto& item=current.wheel[static_cast<std::size_t>(i)];
+                const double angle=2*pi*i/count;
+                const float cx=320.f+194.f*static_cast<float>(std::sin(angle));
+                const float cy=320.f-194.f*static_cast<float>(std::cos(angle));
+                const float width=static_cast<float>(std::clamp(static_cast<int>(pi*194*.78/count),42,78)*2);
+                const unsigned color=i==current.selected?settings.selectedTextColor:settings.textColor;
+                if(settings.showEffectLabels)draw_overlay_text(list,font,overlay,item.effect,cx,cy-15,width,18,
+                    settings.effectSize,settings.mutedColor,false);
+                draw_overlay_text(list,font,overlay,item.name,cx,cy+(settings.showEffectLabels?2.f:-8.f),width,45,
+                    settings.nameSize,color);
+                if(settings.showCounts)draw_overlay_text(list,font,overlay,std::to_wstring(item.count),cx+8,cy+45,width-12,24,
+                    settings.countSize,i==current.selected?settings.selectedTextColor:settings.countColor,false);
+            }
+            const bool selected=current.selected>=0 && current.selected<count;
+            const float centerWidth=std::clamp(settings.cancelRadius*285.f/240.f*.83f,55.f,137.f)*2.f;
+            draw_overlay_text(list,font,overlay,selected?current.wheel[current.selected].name:L"Cancel",
+                320,270,centerWidth,72,settings.centerSize,
+                selected?settings.selectedTextColor:settings.textColor);
+            draw_overlay_text(list,font,overlay,selected?current.wheel[current.selected].effect:current.slotLabel,
+                320,345,centerWidth,24,settings.effectSize,settings.mutedColor,false);
+        }else{
+            const bool vertical=settings.selectionLayout==2;
+            const int width=vertical?270:std::min(600,600/count);
+            const int height=vertical?std::min(72,520/count):142;
+            const int titleY=vertical?std::max(16,320-count*height/2-52):213;
+            draw_overlay_text(list,font,overlay,current.slotLabel,vertical?485.f:320.f,static_cast<float>(titleY),
+                vertical?270.f:560.f,35,settings.centerSize,settings.textColor,false);
+            for(int i=0;i<count;++i){
+                const auto& item=current.wheel[static_cast<std::size_t>(i)];
+                const float x=static_cast<float>(vertical?350:320-count*width/2+i*width);
+                const float y=static_cast<float>(vertical?320-count*height/2+i*height:267);
+                const float nameLeft=x+(vertical?62.f:7.f);
+                const float nameRight=x+width-(vertical?10.f:11.f);
+                draw_overlay_text(list,font,overlay,item.name,(nameLeft+nameRight)*.5f,
+                    y+(vertical?6.f:47.f),nameRight-nameLeft,vertical?height-31.f:height-74.f,
+                    settings.nameSize,i==current.selected?settings.selectedTextColor:settings.textColor,!vertical);
+                if(settings.showCounts)draw_overlay_text(list,font,overlay,std::to_wstring(item.count),
+                    x+width*.52f,y+height-24.f,width*.5f,20,settings.countSize,
+                    i==current.selected?settings.selectedTextColor:settings.countColor,false);
+            }
+            if(!vertical && current.selected>=0 && current.selected<count)
+                draw_overlay_text(list,font,overlay,current.wheel[current.selected].name,320,418,560,36,
+                    settings.nameSize,settings.selectedTextColor,false);
+        }
+    }
+    if(settings.showIndicator && !current.name.empty()){
+        const auto name=utf8(current.name);
+        const float size=settings.indicatorNameSize*overlay.placement.indicator.width/cardReferenceWidth;
+        const ImVec2 extent=font->CalcTextSizeA(size,FLT_MAX,0,name.c_str());
+        const auto& card=overlay.placement.indicator;
+        list->AddText(font,size,{card.x+(card.width-extent.x)*.5f,card.y+4.f*card.height/cardReferenceHeight},
+            IM_COL32((settings.indicatorTextColor>>16)&255,(settings.indicatorTextColor>>8)&255,
+                settings.indicatorTextColor&255,static_cast<int>(std::clamp(overlay.opacity,0.f,1.f)*255)),name.c_str());
+    }
+}
+
 bool png(const wchar_t* filename,const std::uint8_t* pixels,UINT width,UINT height,UINT stride) {
     const auto co=CoInitializeEx(nullptr,COINIT_MULTITHREADED);
     ComPtr<IWICImagingFactory> factory;
@@ -538,6 +680,8 @@ float3 pq(float3 n) {
 }
 float4 ps(Vertex v) : SV_TARGET {
     float4 c=image.Sample(linearClamp,v.uv*uvScale+uvOffset);
+    float gray=dot(c.rgb,float3(0.2126,0.7152,0.0722));
+    c.rgb=max(0,gray+(c.rgb-gray)*1.12);
     c.rgb*=brightness;
     if(hdr>0.5 && c.a>0.0001) {
         float3 linearColor=pow(max(c.rgb/c.a,0),2.2);
@@ -564,6 +708,8 @@ float3 pq(float3 n) {
 }
 float4 ps(Output v) : SV_TARGET {
     float4 c=v.color;
+    float gray=dot(c.rgb,float3(0.2126,0.7152,0.0722));
+    c.rgb=max(0,gray+(c.rgb-gray)*1.12);
     c.rgb*=brightness;
     if(hdr>0.5 && c.a>0.0001) {
         float3 linearColor=pow(max(c.rgb/c.a,0),2.2);
@@ -753,6 +899,20 @@ bool render(IDXGISwapChain* swapchain,const Status& current,float opacity) {
     auto index=chain->GetCurrentBackBufferIndex();
     if (index>=r.frames.size()) return false;
     auto& f=r.frames[index];
+    const auto desc=f.backbuffer->GetDesc();
+    const bool sdr=desc.Format==DXGI_FORMAT_R8G8B8A8_UNORM || desc.Format==DXGI_FORMAT_B8G8R8A8_UNORM ||
+        desc.Format==DXGI_FORMAT_R8G8B8A8_UNORM_SRGB || desc.Format==DXGI_FORMAT_B8G8R8A8_UNORM_SRGB;
+    DXGI_SWAP_CHAIN_DESC swapDesc{};
+    bool useOverlay=false;
+    if((sdr || settings_ui::is_open()) && SUCCEEDED(swapchain->GetDesc(&swapDesc))){
+        auto format=desc.Format;
+        if(format==DXGI_FORMAT_R8G8B8A8_UNORM_SRGB)format=DXGI_FORMAT_R8G8B8A8_UNORM;
+        if(format==DXGI_FORMAT_B8G8R8A8_UNORM_SRGB)format=DXGI_FORMAT_B8G8R8A8_UNORM;
+        const bool installed=settings_ui::install(swapDesc.OutputWindow,r.device.Get(),r.queue.Get(),
+            static_cast<unsigned>(r.frames.size()),format,r.srvHeap.Get());
+        useOverlay=installed && sdr && settings.fontFamily==L"Palatino Linotype" &&
+            settings.detailFont==L"Segoe UI" && settings.indicatorFont==L"Palatino Linotype";
+    }
     auto completed=r.fence->GetCompletedValue();
     if (completed==UINT64_MAX) { r.failed=true; return false; }
     const auto iconsRevision=item_icons::revision();
@@ -760,9 +920,11 @@ bool render(IDXGISwapChain* swapchain,const Status& current,float opacity) {
     if (completed<f.fence || (newTexture && completed<r.lastFence)) return false; // Never reset GPU work still in flight.
     if (FAILED(f.allocator->Reset()) || FAILED(r.commands->Reset(f.allocator.Get(),r.pipeline.Get()))) { r.failed=true; return false; }
     if (newTexture) {
+        suppressRasterText=useOverlay;
         auto image=current.wheelOpen?(settings.selectionLayout==0?raster_wheel(current,false):
             raster_linear(current,settings.selectionLayout==2)):
             raster_card(current.name);
+        suppressRasterText=false;
         void* mapped{}; D3D12_RANGE noRead{0,0};
         if (FAILED(r.upload->Map(0,&noRead,&mapped))) { r.commands->Close(); return false; }
         for (UINT row=0;row<imageHeight;++row)
@@ -776,7 +938,6 @@ bool render(IDXGISwapChain* swapchain,const Status& current,float opacity) {
         auto b=transition(r.texture.Get(),D3D12_RESOURCE_STATE_COPY_DEST,D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE); r.commands->ResourceBarrier(1,&b);
         r.uploaded=true; r.textureSerial=current.serial;r.iconRevision=iconsRevision;
     }
-    const auto desc=f.backbuffer->GetDesc();
     const float width=static_cast<float>(desc.Width),height=static_cast<float>(desc.Height);
     const auto placement=layout(width,height,settings.wheelScale,settings.scale,settings.indicatorGap,
         settings.wheelOffsetX,settings.wheelOffsetY,settings.indicatorOffsetX,settings.indicatorOffsetY);
@@ -824,14 +985,9 @@ bool render(IDXGISwapChain* swapchain,const Status& current,float opacity) {
         r.commands->SetGraphicsRoot32BitConstants(0,12,constants,0);
         r.commands->DrawInstanced(6,1,0,0);
     }
-    if(settings_ui::is_open()){
-        DXGI_SWAP_CHAIN_DESC swapDesc{};
-        auto uiFormat=desc.Format;
-        if(uiFormat==DXGI_FORMAT_R8G8B8A8_UNORM_SRGB)uiFormat=DXGI_FORMAT_R8G8B8A8_UNORM;
-        if(uiFormat==DXGI_FORMAT_B8G8R8A8_UNORM_SRGB)uiFormat=DXGI_FORMAT_B8G8R8A8_UNORM;
-        if(SUCCEEDED(swapchain->GetDesc(&swapDesc)) && settings_ui::install(swapDesc.OutputWindow,r.device.Get(),r.queue.Get(),
-            static_cast<unsigned>(r.frames.size()),uiFormat,r.srvHeap.Get()))
-            settings_ui::render(r.commands.Get());
+    if(useOverlay || settings_ui::is_open()){
+        OverlayText overlay{&current,placement,opacity};
+        settings_ui::render(r.commands.Get(),useOverlay?draw_overlay:nullptr,useOverlay?&overlay:nullptr);
     }
     auto out=transition(f.backbuffer.Get(),D3D12_RESOURCE_STATE_RENDER_TARGET,D3D12_RESOURCE_STATE_PRESENT);
     r.commands->ResourceBarrier(1,&out);
@@ -1076,6 +1232,16 @@ bool preview(const wchar_t* filename,Logger diagnostics,const Settings* options)
     SetWindowPos(probe.window,nullptr,0,0,client.right-client.left,client.bottom-client.top,SWP_NOMOVE|SWP_NOACTIVATE|SWP_NOZORDER);
     ok=ok && SUCCEEDED(probe.chain->ResizeBuffers(2,1280,900,DXGI_FORMAT_R8G8B8A8_UNORM,0));
     if(ok)ok=render(probe.chain.Get(),wheel,1.f) && capture_frame(probe.chain3.Get(),std::wstring(filename)+L".gpu-wheel.png");
+    if(ok){
+        const auto previewLayout=settings.selectionLayout;
+        settings.selectionLayout=1;strip.serial=wheel.serial+1;
+        ok=render(probe.chain.Get(),strip,1.f) &&
+            capture_frame(probe.chain3.Get(),std::wstring(filename)+L".gpu-strip.png");
+        settings.selectionLayout=2;linear.serial=wheel.serial+2;
+        if(ok)ok=render(probe.chain.Get(),linear,1.f) &&
+            capture_frame(probe.chain3.Get(),std::wstring(filename)+L".gpu-list.png");
+        settings.selectionLayout=previewLayout;renderer.textureSerial=UINT64_MAX;
+    }
     // Exercise the actual ImGui backend, font upload and shared descriptor heap.
     const auto ini=std::filesystem::path(std::wstring(filename)+L".settings-test.ini");
     if(ok){

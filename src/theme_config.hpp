@@ -35,6 +35,7 @@ inline indicator::Settings load(const std::filesystem::path& path) {
         return std::wstring(value);
     };
     s.selectionLayout=static_cast<unsigned>(number(L"Switching",L"SelectionLayout",0,0,3));
+    s.blockCameraWhileSelecting=number(L"Switching",L"BlockCameraWhileSelecting",1,0,1)!=0;
 #define THEME_NUM(member,key,low,high) s.member=static_cast<unsigned>(number(L"Theme",L##key,static_cast<int>(s.member),low,high))
 #define THEME_COLOR(member,key) s.member=color(L"Theme",L##key,s.member)
     THEME_NUM(wheelOpacity,"WheelOpacityPercent",0,100);
@@ -103,6 +104,7 @@ inline bool save(const std::filesystem::path& path,const indicator::Settings& s)
         wchar_t text[8]{};swprintf_s(text,L"#%06X",value&0xFFFFFF);write(section,key,text);
     };
     write(L"Switching",L"SelectionLayout",std::to_wstring(s.selectionLayout));
+    write(L"Switching",L"BlockCameraWhileSelecting",s.blockCameraWhileSelecting?L"1":L"0");
 #define SAVE_NUM(section,member,key) write(L##section,L##key,std::to_wstring(s.member))
 #define SAVE_COLOR(section,member,key) color(L##section,L##key,s.member)
     SAVE_NUM("Theme",wheelOpacity,"WheelOpacityPercent");SAVE_NUM("Theme",wheelScale,"WheelScalePercent");
