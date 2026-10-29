@@ -34,7 +34,7 @@ Hold a key, choose the ammo you want, and release. Arrow Wheel adds **four selec
 
 - **Vanilla Elden Ring 1.17.2**
 - **<font color="#f1c232">Elden Ring Reforged 2.3.7.1</font>**
-- **The Convergence:** a local 1.17.2 setup was used to test radial selection and camera blocking. Broader compatibility remains unverified.
+- **<font color="#6d9eeb">The Convergence 3.0.4</font>**
 
 Physical controllers have not been verified in-game on the supported game build.
 

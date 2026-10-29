@@ -8,6 +8,7 @@
 - Improve icon-source fallback and report which source supplied artwork.
 - Add confirmation feedback after a verified equipment change. Native HUD and camera-input experiments remain optional and disabled by default.
 - Preserve existing INI values and add missing settings automatically. Automated build and graphics checks pass; broader in-game validation remains open.
+- User-confirmed compatibility with Convergence 3.0.4 on Elden Ring 1.17.2.
 
 # 0.6.3
 

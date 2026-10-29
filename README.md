@@ -1,8 +1,9 @@
 # Arrow Wheel
 
-Four configurable arrow and bolt wheels for **Elden Ring 1.17.2** (executable
+Four configurable arrow and bolt selectors for **Elden Ring 1.17.2** (executable
 2.7.2.0), loaded through **Mod Engine 3** for offline play. The earlier 0.6.3
 release was tested in-game on vanilla Elden Ring and Reforged 2.3.7.1.
+Convergence 3.0.4 compatibility was confirmed by the user on Elden Ring 1.17.2.
 The DLL checks the executable version before installing hooks.
 
 Hold **1**, **2**, **3**, or **4** for the corresponding ammo slot, point with the

@@ -35,7 +35,7 @@ any eligible owned ammo of that slot's arrow or bolt families can be equipped.
 Version 0.7.0 adds radial, strip, list, and quick-strip selection styles, optional
 tap and hold cycling, and configurable camera blocking during radial mouse selection.
 The earlier 0.6.3 release was tested in-game on vanilla Elden Ring 1.17.2 and
-Reforged 2.3.7.1. A local Convergence setup was used to test radial camera blocking.
+Reforged 2.3.7.1. The user confirmed compatibility with Convergence 3.0.4.
 The new styles and physical controller input still need broader in-game validation.
 
 Press F10 or Back+Start during gameplay for customization. Open a wheel once to populate the
