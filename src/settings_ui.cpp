@@ -23,6 +23,7 @@ std::atomic<bool> panelEnabled{true};
 std::recursive_mutex mutex;
 std::filesystem::path config;
 ImGuiContext* context{};
+ImFont* overlayFont{};
 HWND window{};WNDPROC originalProc{};
 Cursor cursor;
 bool synchronized=false,dirty=false,sameFamily=false,audio=true,ready=false;
@@ -149,6 +150,13 @@ void panel(){
         ImGui::BeginChild("Options",ImVec2(0,-85));
         if(ImGui::BeginTabBar("Customization")){
             if(ImGui::BeginTabItem("Wheel")){
+                const char* layouts[]={"Radial wheel","Horizontal strip","Side list","Quick tap + hold strip"};
+                int layout=static_cast<int>(editing.selectionLayout);
+                if(ImGui::Combo("Selection design",&layout,layouts,4)){editing.selectionLayout=static_cast<unsigned>(layout);changed=true;}
+                changed|=ImGui::Checkbox("Block camera while selecting with mouse",&editing.blockCameraWhileSelecting);
+                ImGui::TextWrapped("Applies to the radial wheel opened from the keyboard. The other designs keep normal camera movement.");
+                ImGui::TextWrapped("Quick tap switches to the last ammo selected in this session. Hold opens the strip. Other designs select on release.");
+                ImGui::TextWrapped("List and strip: scroll to select one item at a time; pages change automatically. Controller next/previous bindings step items.");
                 changed|=slider("Size",editing.wheelScale,50,150,"%d%%");
                 changed|=slider("Surface opacity",editing.wheelOpacity,0,100,"%d%%");
                 changed|=ImGui::SliderInt("Horizontal position",&editing.wheelOffsetX,-600,600);
@@ -162,7 +170,7 @@ void panel(){
                 ImGui::SeparatorText("Text and icons");
                 changed|=text("Name font",editing.fontFamily);changed|=text("Detail font",editing.detailFont);
                 changed|=slider("Name size",editing.nameSize,12,24);changed|=slider("Count size",editing.countSize,10,22);
-                ImGui::TextWrapped("Long names scale down to fit their wedge.");
+                ImGui::TextWrapped("Names keep this size in every design. Long names wrap or end with an ellipsis.");
                 changed|=slider("Center text size",editing.centerSize,14,28);changed|=slider("Detail text size",editing.effectSize,9,15);
                 changed|=ImGui::Checkbox("Text shadows",&editing.textShadow);changed|=ImGui::Checkbox("Show counts",&editing.showCounts);
                 changed|=ImGui::Checkbox("Show effect labels",&editing.showEffectLabels);changed|=ImGui::Checkbox("Show icons",&editing.showIcons);
@@ -184,8 +192,7 @@ void panel(){
                 changed|=ImGui::Checkbox("Show ammo text",&editing.showIndicator);changed|=ImGui::Checkbox("Always show",&editing.alwaysShow);
                 changed|=slider("Text scale",editing.scale,50,200,"%d%%");changed|=slider("Display time",editing.duration,500,30000,"%d ms");
                 changed|=text("Font",editing.indicatorFont);changed|=slider("Name size",editing.indicatorNameSize,12,30);
-                changed|=slider("Detail size",editing.indicatorDetailSize,9,18);changed|=color("Text color",editing.indicatorTextColor);
-                changed|=color("Detail color",editing.indicatorDetailColor);changed|=slider("Gap below wheel",editing.indicatorGap,0,180);
+                changed|=color("Text color",editing.indicatorTextColor);changed|=slider("Gap below wheel",editing.indicatorGap,0,180);
                 changed|=ImGui::SliderInt("Horizontal offset",&editing.indicatorOffsetX,-600,600);
                 changed|=ImGui::SliderInt("Vertical offset",&editing.indicatorOffsetY,-400,400);
                 changed|=slider("Fade in",editing.fadeIn,0,3000,"%d ms");changed|=slider("Fade out",editing.fadeOut,0,5000,"%d ms");
@@ -323,6 +330,11 @@ bool install(HWND hwnd,ID3D12Device* device,ID3D12CommandQueue* queue,unsigned f
     const auto fontPath=std::filesystem::path(windows)/L"Fonts/segoeui.ttf";
     char utf8[4096]{};WideCharToMultiByte(CP_UTF8,0,fontPath.c_str(),-1,utf8,4096,nullptr,nullptr);
     if(GetFileAttributesW(fontPath.c_str())!=INVALID_FILE_ATTRIBUTES)io.Fonts->AddFontFromFileTTF(utf8,16.f);
+    const auto overlayPath=std::filesystem::path(windows)/L"Fonts/pala.ttf";
+    char overlayUtf8[4096]{};WideCharToMultiByte(CP_UTF8,0,overlayPath.c_str(),-1,overlayUtf8,4096,nullptr,nullptr);
+    if(GetFileAttributesW(overlayPath.c_str())!=INVALID_FILE_ATTRIBUTES)
+        overlayFont=io.Fonts->AddFontFromFileTTF(overlayUtf8,40.f);
+    if(!overlayFont)overlayFont=io.Fonts->AddFontDefault();
     ImGui::StyleColorsDark();auto& style=ImGui::GetStyle();style.WindowRounding=7;style.FrameRounding=4;
     style.WindowPadding=ImVec2(14,14);style.ItemSpacing=ImVec2(9,8);
     style.Colors[ImGuiCol_WindowBg]=ImVec4(.055f,.065f,.055f,.98f);
@@ -350,17 +362,20 @@ bool install(HWND hwnd,ID3D12Device* device,ID3D12CommandQueue* queue,unsigned f
     if(!ready){ImGui_ImplDX12_Shutdown();ImGui_ImplWin32_Shutdown();ImGui::DestroyContext(context);context=nullptr;}
     ImGui::SetCurrentContext(previous);return ready;
 }
-void render(ID3D12GraphicsCommandList* commands){
-    std::lock_guard<std::recursive_mutex> guard(mutex);if(!ready || !visible.load())return;
-    update_capture();
-    Context current;auto& io=ImGui::GetIO();io.MouseDrawCursor=true;
-    ImGui_ImplDX12_NewFrame();ImGui_ImplWin32_NewFrame();ImGui::NewFrame();panel();ImGui::Render();
+void render(ID3D12GraphicsCommandList* commands,OverlayDraw overlay,void* data){
+    std::lock_guard<std::recursive_mutex> guard(mutex);if(!ready || (!visible.load() && !overlay))return;
+    if(visible.load())update_capture();
+    Context current;auto& io=ImGui::GetIO();io.MouseDrawCursor=visible.load();
+    ImGui_ImplDX12_NewFrame();ImGui_ImplWin32_NewFrame();ImGui::NewFrame();
+    if(overlay)overlay(ImGui::GetBackgroundDrawList(),overlayFont,data);
+    if(visible.load())panel();
+    ImGui::Render();
     ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(),commands);
 }
 void shutdown(){
     std::lock_guard<std::recursive_mutex> guard(mutex);if(!context)return;
     Context current;
     ImGui_ImplDX12_Shutdown();ImGui_ImplWin32_Shutdown();ImGui::DestroyContext(context);
-    current.previous=nullptr;context=nullptr;ready=false;
+    current.previous=nullptr;context=nullptr;overlayFont=nullptr;ready=false;
 }
 }

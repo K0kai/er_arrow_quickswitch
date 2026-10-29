@@ -33,6 +33,13 @@ int main(){
     state.raw_mouse(mouse);assert(state.down(VK_RBUTTON) && state.down(VK_XBUTTON1));
     mouse.usButtonFlags=RI_MOUSE_RIGHT_BUTTON_UP|RI_MOUSE_BUTTON_4_UP;
     state.raw_mouse(mouse);assert(!state.down(VK_RBUTTON) && !state.down(VK_XBUTTON1));
+    mouse.lLastX=12;mouse.lLastY=-7;mouse.usButtonFlags=RI_MOUSE_LEFT_BUTTON_DOWN|RI_MOUSE_WHEEL;
+    mouse.usButtonData=WHEEL_DELTA;
+    assert(!window_input::consume_camera_motion(mouse,false) && mouse.lLastX==12 && mouse.lLastY==-7);
+    assert(window_input::consume_camera_motion(mouse,true) && mouse.lLastX==0 && mouse.lLastY==0);
+    assert(mouse.usButtonFlags==(RI_MOUSE_LEFT_BUTTON_DOWN|RI_MOUSE_WHEEL) && mouse.usButtonData==WHEEL_DELTA);
+    mouse.usFlags=MOUSE_MOVE_ABSOLUTE;mouse.lLastX=100;mouse.lLastY=200;
+    assert(!window_input::consume_camera_motion(mouse,true) && mouse.lLastX==100 && mouse.lLastY==200);
     state.message(WM_ACTIVATEAPP,FALSE,0);mouse.usButtonFlags=RI_MOUSE_RIGHT_BUTTON_DOWN;
     state.raw_mouse(mouse);assert(!state.down(VK_RBUTTON));
     state.message(WM_SETFOCUS,0,0);state.message(WM_NCDESTROY,0,0);assert(!state.focused);

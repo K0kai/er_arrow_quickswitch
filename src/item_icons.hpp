@@ -6,7 +6,13 @@
 
 namespace arrow_switch::item_icons {
 using Logger=void(*)(const char*,...);
-struct Image { unsigned width=128,height=128;std::vector<std::uint8_t> rgba; };
+// Reserved IDs for exact named sprites in the installed menu atlas.
+constexpr unsigned menuSlotBase=0xF0000001u;
+constexpr unsigned menuSelectionWide=0xF0000002u;
+constexpr unsigned menuArrowQuantity=0xF0000003u;
+constexpr unsigned menuBoltQuantity=0xF0000004u;
+struct Image { unsigned width=128,height=128,contentX=0,contentY=0,contentWidth=128,contentHeight=128;
+    std::vector<std::uint8_t> rgba; };
 // Icons are extracted in a background worker and cached as small RGBA images.
 // No game textures are redistributed and no game files are written.
 void initialize(const std::filesystem::path& gameDirectory,Logger logger);

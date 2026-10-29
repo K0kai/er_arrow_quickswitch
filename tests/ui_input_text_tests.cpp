@@ -11,17 +11,13 @@ int main(){
     cursor.move(10000,-10000,1920,1080);assert(cursor.x==1919 && cursor.y==0);
     cursor.move(0,0,640,360);assert(cursor.x==639 && cursor.y==0);
     HDC dc=CreateCompatibleDC(nullptr);assert(dc);
-    RECT area{0,0,116,52};
-    assert(arrow_switch::indicator::fit_wrapped_text(dc,L"Arrow",area,18,L"Cambria")==18);
-    for(const auto& name:{L"Bloodbone Arrow (Fletched)",L"Poisonbone Arrow (Fletched)",L"Haligbone Arrow (Fletched)"}){
-        const auto size=arrow_switch::indicator::fit_wrapped_text(dc,name,area,18,L"Cambria");
-        assert(size>=10 && size<18);
-        const auto font=CreateFontW(-static_cast<int>(size),0,0,0,FW_NORMAL,FALSE,FALSE,FALSE,DEFAULT_CHARSET,
-            OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,ANTIALIASED_QUALITY,DEFAULT_PITCH,L"Cambria");
-        const auto previous=SelectObject(dc,font);RECT measured{0,0,116,0};
-        DrawTextW(dc,name,-1,&measured,DT_CALCRECT|DT_WORDBREAK|DT_NOPREFIX|DT_EDITCONTROL);
-        assert(measured.bottom<=52 && measured.right<=116);
-        SelectObject(dc,previous);DeleteObject(font);
-    }
+    const auto font=arrow_switch::indicator::create_text_font(18,L"Palatino Linotype");assert(font);
+    const auto previous=SelectObject(dc,font);
+    // The reported name needs more than the old 140-pixel column. The wider
+    // list name row accommodates it without changing the requested font size.
+    RECT measured{};
+    DrawTextW(dc,L"Lightningbone Bolt",-1,&measured,DT_CALCRECT|DT_SINGLELINE|DT_NOPREFIX);
+    assert(measured.right>140 && measured.right<=198);
+    SelectObject(dc,previous);DeleteObject(font);
     DeleteDC(dc);
 }

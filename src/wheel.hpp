@@ -10,10 +10,11 @@
 
 namespace arrow_switch::wheel {
 constexpr std::size_t pageSize=8;
-constexpr std::size_t page_count(std::size_t items){return (items+pageSize-1)/pageSize;}
-constexpr std::size_t page_items(std::size_t items,std::size_t page){
-    const auto start=page*pageSize;
-    return start<items?std::min(pageSize,items-start):0;
+constexpr std::size_t page_size(unsigned layout){return layout==1 || layout==3?4:pageSize;}
+constexpr std::size_t page_count(std::size_t items,std::size_t size=pageSize){return size?(items+size-1)/size:0;}
+constexpr std::size_t page_items(std::size_t items,std::size_t page,std::size_t size=pageSize){
+    const auto start=page*size;
+    return start<items?std::min(size,items-start):0;
 }
 constexpr std::size_t turn_page(std::size_t page,std::size_t pages,int scrollSteps){
     if(!pages)return 0;
@@ -30,6 +31,25 @@ inline std::vector<Arrow> eligible(const std::vector<Arrow>& arrows,std::uint32_
         if(arrow.count && slot_accepts(slot,arrow.type) && arrow.id!=reserved &&
            (!sameFamily || empty || arrow.type==at->type)) result.push_back(arrow);
     return result;
+}
+inline std::uint32_t next_eligible_id(const std::vector<Arrow>& options,std::uint32_t current){
+    if(options.size()<2)return 0xFFFFFFFFu;
+    const auto found=std::find_if(options.begin(),options.end(),[&](const Arrow& arrow){return arrow.id==current;});
+    if(found==options.end())return 0xFFFFFFFFu;
+    return options[(static_cast<std::size_t>(found-options.begin())+1)%options.size()].id;
+}
+inline std::uint32_t release_target(unsigned layout,bool tapHoldCycle,std::uint64_t openDuration,
+                                    bool navigated,int selected,std::size_t page,
+                                    const std::vector<Arrow>& options,std::uint32_t previous){
+    if(layout==3 && !tapHoldCycle && openDuration<220 && !navigated){
+        const auto found=std::find_if(options.begin(),options.end(),[&](const Arrow& arrow){return arrow.id==previous;});
+        return found==options.end()?0xFFFFFFFFu:previous;
+    }
+    if((layout==0 || navigated) && selected>=0){
+        const auto index=page*page_size(layout)+static_cast<std::size_t>(selected);
+        if(index<options.size())return options[index].id;
+    }
+    return 0xFFFFFFFFu;
 }
 
 // Index zero is at twelve o'clock, increasing clockwise. The center is a cancel zone.

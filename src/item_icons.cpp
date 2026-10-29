@@ -8,6 +8,7 @@
 #include "icon_archive.hpp"
 #include <array>
 #include <atomic>
+#include <cmath>
 #include <mutex>
 #include <unordered_set>
 
@@ -100,6 +101,10 @@ float4 ps(V v):SV_TARGET{return atlas.Sample(filter,v.uv);}
         context->Draw(3,0);context->CopyResource(readback.Get(),target.Get());
         D3D11_MAPPED_SUBRESOURCE mapped{};if(FAILED(context->Map(readback.Get(),0,D3D11_MAP_READ,0,&mapped)))return {};
         auto image=std::make_shared<Image>();image->rgba.resize(128*128*4);
+        image->contentWidth=std::max(1u,static_cast<unsigned>(std::round(w)));
+        image->contentHeight=std::max(1u,static_cast<unsigned>(std::round(h)));
+        image->contentX=(128-image->contentWidth)/2;
+        image->contentY=(128-image->contentHeight)/2;
         for(unsigned y=0;y<128;++y)std::memcpy(image->rgba.data()+y*128*4,static_cast<const std::uint8_t*>(mapped.pData)+y*mapped.RowPitch,128*4);
         context->Unmap(readback.Get(),0);return image;
     }
@@ -119,13 +124,19 @@ public:
             const std::string prefix="menu/"+source.quality+"/01_common";
             if(!source.tried){
                 source.tried=true;Bytes layout;
-                if(archive.read(prefix+".sblytbnd.dcx",layout))source.layout=parse_layout(layout);
+                if(archive.read(prefix+".sblytbnd.dcx",layout)){
+                    source.layout=parse_layout(layout);
+                    if(log)log("Item icons: %s layout source: %s.",source.quality.c_str(),archive.source());
+                }
                 if(log)log("Item icons: %s layout contains %zu entries.",source.quality.c_str(),source.layout.size());
             }
             const auto found=source.layout.find(id);if(found==source.layout.end())continue;
             const auto& rect=found->second;
             if(!source.textures.contains(rect.atlas)){
-                if(source.tpf.empty() && !archive.read(prefix+".tpf.dcx",source.tpf))continue;
+                if(source.tpf.empty()){
+                    if(!archive.read(prefix+".tpf.dcx",source.tpf))continue;
+                    if(log)log("Item icons: %s texture source: %s.",source.quality.c_str(),archive.source());
+                }
                 const auto dds=tpf_texture(source.tpf,rect.atlas);unsigned width{},height{};
                 auto texture=decoder.texture(dds,width,height);
                 source.sizes[rect.atlas]={width,height};source.textures[rect.atlas]=std::move(texture);

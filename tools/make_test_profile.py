@@ -9,6 +9,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--source", type=Path, required=True)
 parser.add_argument("--dll", type=Path, required=True)
 parser.add_argument("--output", type=Path, required=True)
+parser.add_argument("--without-nightreign", action="store_true")
 args = parser.parse_args()
 source, dll, output = (p.resolve() for p in (args.source, args.dll, args.output))
 if output in (source, dll):
@@ -16,6 +17,25 @@ if output in (source, dll):
 if not source.is_file() or not dll.is_file():
     raise SystemExit("The source profile and test DLL must exist")
 text = source.read_text(encoding="utf-8-sig")
+if args.without_nightreign:
+    blocks = re.split(r"(?=^\[\[(?:package|natives)\]\]\s*$)", text, flags=re.MULTILINE)
+    kept = []
+    for block in blocks:
+        if block.startswith("[[package]]"):
+            package = tomllib.loads(block)["package"][0]
+            if package["id"].startswith("nrm-"):
+                continue
+        elif block.startswith("[[natives]]"):
+            native = tomllib.loads(block)["natives"][0]
+            if Path(native["path"]).name in {
+                "NightreignMovement.Convergence.dll", "MarkingCompatibility.dll"
+            }:
+                continue
+            if native.get("initializer", {}).get("function") == "QuickSwitchInitialize":
+                block = re.sub(r"^load_after\s*=\s*.*\r?\n", "", block, flags=re.MULTILINE)
+        kept.append(block)
+    text = "".join(kept)
+    text = text.replace("# Last package wins: override only the action script loader.\n", "")
 original = tomllib.loads(text)
 entries = [entry for entry in original.get("natives", [])
            if entry.get("initializer", {}).get("function") == "QuickSwitchInitialize"]

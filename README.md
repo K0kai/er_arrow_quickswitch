@@ -1,14 +1,32 @@
 # Arrow Wheel
 
 Four configurable arrow and bolt wheels for **Elden Ring 1.17.2** (executable
-2.7.2.0), loaded through **Mod Engine 3** for offline play. Version 0.6.3 was
-tested in-game on vanilla Elden Ring and Reforged 2.3.7.1.
+2.7.2.0), loaded through **Mod Engine 3** for offline play. The earlier 0.6.3
+release was tested in-game on vanilla Elden Ring and Reforged 2.3.7.1.
 The DLL checks the executable version before installing hooks.
 
 Hold **1**, **2**, **3**, or **4** for the corresponding ammo slot, point with the
 mouse, and release to equip. The center cancels; scroll to change pages. Optional
 controller bindings use the right stick for selection. An empty ammo slot can be
 filled through its wheel; that first selection ignores `CycleSameFamily`.
+
+Version 0.7.0 adds four selection designs: radial wheel (default),
+horizontal strip, side list, and quick tap with a strip on hold. In quick tap mode,
+a brief press recalls the previous ammo selected for that slot during the current
+session; holding the key opens the strip. The choice is saved as
+`SelectionLayout=0..3` under `[Switching]` in the INI and applies without restarting.
+All designs show quantities beside an arrow or bolt bundle glyph. Names default
+to Palatino Linotype, and the ammo indicator shows only the item name.
+Names keep the configured size across designs; long labels wrap or use an ellipsis.
+In the list and strip, scroll to move one item at a time. Pages change automatically
+when selection crosses a page boundary, and the ends wrap around the full list.
+The strip shows four cards per page so labels retain a readable size.
+Controller next/previous bindings step items in these designs. Holding and releasing
+without navigating leaves the equipped ammo unchanged; the radial wheel still uses aiming.
+An optional shared tap-to-cycle and hold-to-open binding is also available.
+The radial wheel can keep the camera still while the mouse chooses ammo; this
+is enabled by default and can be turned off. Text is drawn at screen resolution
+in the default SDR appearance, and item artwork uses smoother filtering.
 
 Press **F10** or **Back+Start** on an XInput controller for the settings panel powered by **Dear ImGui**. It includes wheel
 and indicator appearance, keyboard/controller bindings, sound and ammo filtering.
@@ -75,7 +93,7 @@ not part of the source repository. [Installation and compatibility details](docs
 build-release.cmd
 ```
 
-This rebuilds and tests the mod, then writes `release/ArrowQuickSwitch-0.6.3.zip`.
+This rebuilds and tests the mod, then writes `release/ArrowQuickSwitch-0.7.0.zip`.
 The ZIP contains the DLL, installation/customization documents and dependency
 licenses under `licenses/`. It excludes the user's INI. An optional local legacy
 badge sheet is included if present; source builds work without it, using fallback

@@ -7,6 +7,7 @@
 #include "settings_ui.hpp"
 #include "theme_config.hpp"
 #include "text_layout.hpp"
+#include "../third_party/imgui/imgui.h"
 #include <MinHook.h>
 #include <d3d12.h>
 #include <dxgi1_4.h>
@@ -18,6 +19,7 @@
 #include <atomic>
 #include <bit>
 #include <cmath>
+#include <cfloat>
 #include <cstring>
 #include <filesystem>
 #include <mutex>
@@ -26,12 +28,13 @@
 namespace arrow_switch::indicator {
 using Microsoft::WRL::ComPtr;
 namespace {
-constexpr UINT cardWidth=420,cardHeight=88,imageWidth=640,imageHeight=768;
+constexpr UINT cardWidth=static_cast<UINT>(cardReferenceWidth),cardHeight=static_cast<UINT>(cardReferenceHeight),imageWidth=640,imageHeight=768;
 constexpr UINT indicatorRow=656,wheelCanvas=640;
 Settings settings;
 Settings pendingSettings;
 bool settingsPending=false;
 bool previewBackdrop=false;
+bool suppressRasterText=false;
 Logger logger{};
 HMODULE owner{};
 std::atomic<bool> gameplay{};
@@ -106,44 +109,87 @@ void blend_pixel(Pixels& image,int x,int y,unsigned color,float alpha) {
     }
     image.bytes[p+3]=static_cast<std::uint8_t>(alpha*255+image.bytes[p+3]*(1-alpha));
 }
+void blend_scaled(Pixels& target,int x,int y,const std::uint8_t* source,
+                  unsigned stride,unsigned sourceX,unsigned sourceY,unsigned sourceWidth,unsigned sourceHeight,
+                  int destX,int destY,int destWidth,int destHeight,unsigned tint=0xFFFFFFFFu) {
+    if(destWidth<=0 || destHeight<=0 || !sourceWidth || !sourceHeight)return;
+    const float fx=(x-destX+.5f)*sourceWidth/destWidth-.5f;
+    const float fy=(y-destY+.5f)*sourceHeight/destHeight-.5f;
+    const int x0=std::clamp(static_cast<int>(std::floor(fx)),0,static_cast<int>(sourceWidth)-1);
+    const int y0=std::clamp(static_cast<int>(std::floor(fy)),0,static_cast<int>(sourceHeight)-1);
+    const int x1=std::min(x0+1,static_cast<int>(sourceWidth)-1);
+    const int y1=std::min(y0+1,static_cast<int>(sourceHeight)-1);
+    const float wx=std::clamp(fx-x0,0.f,1.f),wy=std::clamp(fy-y0,0.f,1.f);
+    const float weights[4]={(1-wx)*(1-wy),wx*(1-wy),(1-wx)*wy,wx*wy};
+    const int xs[4]={x0,x1,x0,x1},ys[4]={y0,y0,y1,y1};
+    float alpha=0,rgb[3]{};
+    for(int i=0;i<4;++i){
+        const auto p=(static_cast<std::size_t>(sourceY+ys[i])*stride+sourceX+xs[i])*4;
+        const float a=source[p+3]/255.f*weights[i];alpha+=a;
+        for(int c=0;c<3;++c)rgb[c]+=source[p+c]*a;
+    }
+    if(alpha<=0)return;
+    const auto channel=[&](int index){return static_cast<unsigned>(std::clamp(rgb[index]/alpha,0.f,255.f));};
+    const unsigned color=tint==0xFFFFFFFFu?
+        (channel(0)<<16)|(channel(1)<<8)|channel(2):tint;
+    blend_pixel(target,x,y,color,alpha);
+}
 // GDI supplies a grayscale glyph mask; tint and shadow are composed explicitly
 // into premultiplied RGBA. Text opacity is independent of the wheel surfaces.
 struct TextCanvas {
+    static constexpr LONG sampleScale=2;
+    static constexpr LONG maskWidth=imageWidth*sampleScale;
+    static constexpr LONG maskHeight=imageHeight*sampleScale;
     HDC dc=CreateCompatibleDC(nullptr);
     HBITMAP bitmap{};
     HGDIOBJ oldBitmap{};
     void* memory{};
     TextCanvas() {
         BITMAPINFO info{};info.bmiHeader.biSize=sizeof(BITMAPINFOHEADER);
-        info.bmiHeader.biWidth=imageWidth;info.bmiHeader.biHeight=-static_cast<LONG>(imageHeight);
+        info.bmiHeader.biWidth=maskWidth;info.bmiHeader.biHeight=-maskHeight;
         info.bmiHeader.biPlanes=1;info.bmiHeader.biBitCount=32;info.bmiHeader.biCompression=BI_RGB;
         if(dc)bitmap=CreateDIBSection(dc,&info,DIB_RGB_COLORS,&memory,nullptr,0);
         if(bitmap){oldBitmap=SelectObject(dc,bitmap);SetBkMode(dc,TRANSPARENT);SetTextColor(dc,RGB(255,255,255));}
     }
     ~TextCanvas(){if(oldBitmap)SelectObject(dc,oldBitmap);if(bitmap)DeleteObject(bitmap);if(dc)DeleteDC(dc);}
+    int width(const std::wstring& text,unsigned size,const std::wstring& family){
+        if(!dc)return 0;
+        const auto font=create_text_font(size,family);
+        const auto previous=SelectObject(dc,font?font:GetStockObject(DEFAULT_GUI_FONT));
+        SIZE measured{};GetTextExtentPoint32W(dc,text.c_str(),static_cast<int>(text.size()),&measured);
+        SelectObject(dc,previous);if(font)DeleteObject(font);
+        return measured.cx;
+    }
     void draw(Pixels& image,const std::wstring& text,RECT rect,unsigned size,const std::wstring& family,
               unsigned color,UINT flags=DT_CENTER|DT_SINGLELINE|DT_VCENTER|DT_END_ELLIPSIS|DT_NOPREFIX) {
-        if(!memory || text.empty())return;
-        if(flags&DT_WORDBREAK){size=fit_wrapped_text(dc,text,rect,size,family);flags|=DT_EDITCONTROL;}
+        if(!memory || text.empty() || suppressRasterText)return;
+        if(flags&DT_WORDBREAK)flags|=DT_EDITCONTROL;
         rect.left=std::clamp(rect.left,0L,static_cast<LONG>(imageWidth));
         rect.right=std::clamp(rect.right,rect.left,static_cast<LONG>(imageWidth));
         rect.top=std::clamp(rect.top,0L,static_cast<LONG>(imageHeight));
         rect.bottom=std::clamp(rect.bottom,rect.top,static_cast<LONG>(imageHeight));
+        const RECT maskRect{rect.left*sampleScale,rect.top*sampleScale,
+            rect.right*sampleScale,rect.bottom*sampleScale};
         auto* mask=static_cast<std::uint8_t*>(memory);
-        for(LONG y=rect.top;y<rect.bottom;++y)
-            std::memset(mask+(static_cast<std::size_t>(y)*imageWidth+rect.left)*4,0,(rect.right-rect.left)*4);
-        HFONT font=CreateFontW(-static_cast<int>(size),0,0,0,FW_NORMAL,FALSE,FALSE,FALSE,DEFAULT_CHARSET,
-            OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,ANTIALIASED_QUALITY,DEFAULT_PITCH,family.c_str());
+        for(LONG y=maskRect.top;y<maskRect.bottom;++y)
+            std::memset(mask+(static_cast<std::size_t>(y)*maskWidth+maskRect.left)*4,0,
+                (maskRect.right-maskRect.left)*4);
+        HFONT font=create_text_font(size*sampleScale,family);
         const auto previous=SelectObject(dc,font?font:GetStockObject(DEFAULT_GUI_FONT));
-        DrawTextW(dc,text.c_str(),-1,&rect,flags);GdiFlush();
+        RECT drawRect=maskRect;
+        DrawTextW(dc,text.c_str(),-1,&drawRect,flags);GdiFlush();
         const auto ink=[&](LONG x,LONG y){
             if(x<rect.left||x>=rect.right||y<rect.top||y>=rect.bottom)return 0.f;
-            const auto p=(static_cast<std::size_t>(y)*imageWidth+x)*4;
-            return std::max({mask[p],mask[p+1],mask[p+2]})/255.f;
+            unsigned total=0;
+            for(LONG sy=0;sy<sampleScale;++sy)for(LONG sx=0;sx<sampleScale;++sx){
+                const auto p=(static_cast<std::size_t>(y*sampleScale+sy)*maskWidth+x*sampleScale+sx)*4;
+                total+=std::max({mask[p],mask[p+1],mask[p+2]});
+            }
+            return total/(255.f*sampleScale*sampleScale);
         };
         if(settings.textShadow)for(LONG y=rect.top-1;y<=rect.bottom+1;++y)for(LONG x=rect.left-1;x<=rect.right+1;++x){
             const float shadow=std::max({ink(x-1,y-1),ink(x,y-1),ink(x+1,y-1),ink(x-1,y),ink(x+1,y),ink(x,y+1)});
-            if(shadow>0)blend_pixel(image,x,y,0x070907,shadow*.90f);
+            if(shadow>0)blend_pixel(image,x,y,0x070907,shadow*.68f);
         }
         for(LONG y=rect.top;y<rect.bottom;++y)for(LONG x=rect.left;x<rect.right;++x){
             const auto coverage=ink(x,y);if(coverage>0)blend_pixel(image,x,y,color,coverage);
@@ -236,14 +282,57 @@ int icon_index(const std::wstring& effect) {
     for(int i=0;i<13;++i) if(effect==names[i]) return i==10?9:i>=11?i-1:i;
     return -1;
 }
-Pixels raster_card(const std::wstring& name,std::uint32_t count,const std::wstring& slotLabel) {
+void draw_menu_sprite(Pixels& image,const item_icons::Image& sprite,int x,int y,int width,int height,unsigned tint=0xFFFFFFFFu){
+    if(width<=0 || height<=0)return;
+    for(int py=0;py<height;++py)for(int px=0;px<width;++px){
+        blend_scaled(image,x+px,y+py,sprite.rgba.data(),sprite.width,
+            sprite.contentX,sprite.contentY,sprite.contentWidth,sprite.contentHeight,
+            x,y,width,height,tint);
+    }
+}
+void draw_bundle_fallback(Pixels& image,int x,int y,int width,int height,unsigned color){
+    const auto line=[&](float ax,float ay,float bx,float by){
+        const int steps=std::max(1,static_cast<int>(std::ceil(std::max(std::abs(bx-ax),std::abs(by-ay)))));
+        for(int step=0;step<=steps;++step){
+            const float t=static_cast<float>(step)/steps;
+            blend_pixel(image,x+static_cast<int>(std::round(ax+(bx-ax)*t)),y+static_cast<int>(std::round(ay+(by-ay)*t)),color,.85f);
+        }
+    };
+    for(int arrow=0;arrow<3;++arrow){
+        const float tail=width*(.12f+.22f*arrow),head=tail+width*.35f;
+        line(tail,height-2.f,head,2.f);
+        line(head,2.f,head-width*.22f,5.f);
+        line(head,2.f,head+width*.1f,5.f);
+        line(tail,height-2.f,tail-width*.08f,height-6.f);
+    }
+}
+void draw_quantity(Pixels& image,TextCanvas& text,std::uint32_t count,RECT bounds,unsigned size,unsigned color,bool bolt){
+    const auto number=std::to_wstring(count);
+    const auto sprite=item_icons::request(bolt?item_icons::menuBoltQuantity:item_icons::menuArrowQuantity);
+    const float aspect=sprite?static_cast<float>(sprite->contentWidth)/sprite->contentHeight:.56f;
+    const int available=bounds.right-bounds.left,boxHeight=bounds.bottom-bounds.top;
+    if(available<=0 || boxHeight<=0)return;
+    int iconHeight{},iconWidth{},numberWidth{},groupWidth{};
+    do{
+        iconHeight=std::min(boxHeight,static_cast<int>(size)+3);
+        iconWidth=std::max(6,static_cast<int>(std::round(iconHeight*aspect)));
+        numberWidth=text.width(number,size,settings.detailFont);
+        groupWidth=iconWidth+5+numberWidth;
+        if(groupWidth<=available || size<=10)break;
+        --size;
+    }while(true);
+    const int left=bounds.left+(available-groupWidth)/2,top=bounds.top+(boxHeight-iconHeight)/2;
+    if(sprite)draw_menu_sprite(image,*sprite,left,top,iconWidth,iconHeight,color);
+    else draw_bundle_fallback(image,left,top,iconWidth,iconHeight,color);
+    text.draw(image,number,{left+iconWidth+5,bounds.top,left+groupWidth,bounds.bottom},size,settings.detailFont,color,
+        DT_LEFT|DT_SINGLELINE|DT_VCENTER|DT_NOPREFIX);
+}
+Pixels raster_card(const std::wstring& name) {
     Pixels result;result.bytes.resize(imageWidth*imageHeight*4);
     if(!settings.showIndicator || name.empty())return result;
     TextCanvas text;
     const LONG y=indicatorRow;
     text.draw(result,name,{4,y+4,416,y+43},settings.indicatorNameSize,settings.indicatorFont,settings.indicatorTextColor);
-    text.draw(result,slotLabel+L"   \u00d7 "+std::to_wstring(count),{4,y+45,416,y+71},
-        settings.indicatorDetailSize,settings.detailFont,settings.indicatorDetailColor);
     return result;
 }
 
@@ -272,14 +361,18 @@ Pixels raster_wheel(const Status& current,bool background=true) {
                 const auto source=(static_cast<std::size_t>(iy)*64+ix)*4;
                 const unsigned color=(selectionImage[source]<<16)|(selectionImage[source+1]<<8)|selectionImage[source+2];
                 blend_pixel(result,x,y,color,selectionImage[source+3]/255.f);
-            }else if(localV>=-14 && localV<=13 && std::abs(localU)<=(localV<0?11+localV*.75f:localV<5?4.f:2.f)){
-                blend_pixel(result,x,y,settings.selectionColor,1.f);
+            }else{
+                const float halfWidth=localV<0?11+localV*.75f:localV<5?4.f:2.f;
+                const float edge=std::min({localV+14.5f,13.5f-localV,halfWidth+.5f-std::abs(localU)});
+                if(edge>0)blend_pixel(result,x,y,settings.selectionColor,std::min(1.f,edge));
             }
         }
     }
     const auto& atlas=game_icons();
-    if(settings.showIcons && settings.showItemIcons){
-        std::vector<unsigned> ids;for(const auto& item:current.wheel)ids.push_back(item.iconId);
+    if(settings.showCounts || (settings.showIcons && settings.showItemIcons)){
+        std::vector<unsigned> ids;
+        if(settings.showCounts)ids.push_back(current.slotLabel.starts_with(L"BOLT")?item_icons::menuBoltQuantity:item_icons::menuArrowQuantity);
+        if(settings.showIcons && settings.showItemIcons)for(const auto& item:current.wheel)ids.push_back(item.iconId);
         item_icons::prefetch(ids);
     }
     TextCanvas text;
@@ -305,10 +398,8 @@ Pixels raster_wheel(const Status& current,bool background=true) {
         if(artwork){
             const int size=static_cast<int>(64*settings.itemIconScale/100);
             for(int y=0;y<size;++y)for(int x=0;x<size;++x){
-                const auto source=(static_cast<std::size_t>(y*artwork->height/size)*artwork->width+x*artwork->width/size)*4;
-                const auto& rgba=artwork->rgba;
-                const unsigned color=(rgba[source]<<16)|(rgba[source+1]<<8)|rgba[source+2];
-                blend_pixel(result,cx-size/2+x,cy-39-size/2+y,color,rgba[source+3]/255.f);
+                blend_scaled(result,cx-size/2+x,cy-39-size/2+y,artwork->rgba.data(),artwork->width,
+                    0,0,artwork->width,artwork->height,cx-size/2,cy-39-size/2,size,size);
             }
         }
         const bool icons=settings.showEffectIcons && atlas.size()==768*64*4 && (item.iconsMask || icon_index(item.effect)>=0);
@@ -337,22 +428,219 @@ Pixels raster_wheel(const Status& current,bool background=true) {
         text.draw(result,item.name,{cx-halfWidth,cy+nameTop,cx+halfWidth,cy+44},settings.nameSize,settings.fontFamily,nameColor,
             DT_CENTER|DT_WORDBREAK|DT_END_ELLIPSIS|DT_NOPREFIX);
         if(settings.showCounts)
-            text.draw(result,L"\u00d7 "+std::to_wstring(item.count),{cx-halfWidth,cy+45,cx+halfWidth,cy+67},
-                settings.countSize,settings.detailFont,selected?settings.selectedTextColor:settings.countColor);
+            draw_quantity(result,text,item.count,{cx-halfWidth,cy+45,cx+halfWidth,cy+67},
+                settings.countSize,selected?settings.selectedTextColor:settings.countColor,current.slotLabel.starts_with(L"BOLT"));
     }
     const bool selected=current.selected>=0&&static_cast<std::size_t>(current.selected)<n;
     const LONG centerHalf=static_cast<LONG>(std::clamp(inner*.83f,55.f,137.f));
     text.draw(result,selected?current.wheel[current.selected].name:L"Cancel",
-        {320-centerHalf,278,320+centerHalf,330},settings.centerSize,settings.fontFamily,
+        {320-centerHalf,270,320+centerHalf,342},settings.centerSize,settings.fontFamily,
         selected?settings.selectedTextColor:settings.textColor,DT_CENTER|DT_WORDBREAK|DT_END_ELLIPSIS|DT_NOPREFIX);
     const bool paged=current.slotLabel.find(L'/')!=std::wstring::npos;
     text.draw(result,selected?current.wheel[current.selected].effect:current.slotLabel,
         {320-centerHalf,345,320+centerHalf,369},settings.effectSize,settings.detailFont,settings.mutedColor);
     if(paged && selected)text.draw(result,current.slotLabel,{320-centerHalf,371,320+centerHalf,393},
         settings.effectSize,settings.detailFont,settings.mutedColor);
-    const auto card=raster_card(current.name,current.count,current.indicatorLabel);
+    const auto card=raster_card(current.name);
     std::copy(card.bytes.begin()+indicatorRow*imageWidth*4,card.bytes.end(),result.bytes.begin()+indicatorRow*imageWidth*4);
     return result;
+}
+
+void draw_linear_icons(Pixels& image,TextCanvas& text,const WheelItem& item,int x,int y,int width,int height,bool vertical){
+    if(!settings.showIcons)return;
+    const int size=std::clamp(static_cast<int>(40*settings.itemIconScale/100),24,48);
+    const int iconX=vertical?x+8:x+(width-size)/2;
+    const int iconY=vertical?y+(height-size)/2:y+5;
+    if(const auto base=item_icons::request(item_icons::menuSlotBase))
+        draw_menu_sprite(image,*base,iconX-5,iconY-5,size+10,size+10);
+    const auto artwork=settings.showItemIcons?item_icons::request(item.iconId):nullptr;
+    if(artwork){
+        for(int py=0;py<size;++py)for(int px=0;px<size;++px){
+            const auto source=(static_cast<std::size_t>(py*artwork->height/size)*artwork->width+px*artwork->width/size)*4;
+            const auto& rgba=artwork->rgba;
+            blend_pixel(image,iconX+px,iconY+py,(rgba[source]<<16)|(rgba[source+1]<<8)|rgba[source+2],rgba[source+3]/255.f);
+        }
+    }else text.draw(image,std::wstring(1,item.badge),{iconX,iconY,iconX+size,iconY+size},
+        25,L"Segoe UI Symbol",item.color);
+    if(!settings.showEffectIcons)return;
+    const auto& atlas=game_icons();
+    if(atlas.size()!=768*64*4)return;
+    std::array<int,12> tiles{};int count=0;
+    if(item.iconsMask){
+        constexpr int order[]{0,1,2,3,4,5,6,7,8,10,11,9};
+        for(const auto tile:order)if(item.iconsMask&(1u<<tile))tiles[count++]=tile;
+    }else if(const auto tile=icon_index(item.effect);tile>=0)tiles[count++]=tile;
+    const int badge=std::clamp(static_cast<int>(20*settings.iconScale/100),14,24);
+    const int maxVisible=vertical?4:2;
+    const int shown=std::min(count,maxVisible);
+    const int startX=vertical?x+width-8-shown*badge:iconX+size-shown*badge/2;
+    const int startY=vertical?y+height-badge-5:iconY+size-badge/2;
+    for(int part=0;part<shown;++part)for(int py=0;py<badge;++py)for(int px=0;px<badge;++px){
+        const int ax=tiles[part]*64+px*64/badge,ay=py*64/badge;
+        const auto source=(static_cast<std::size_t>(ay)*768+ax)*4;
+        blend_pixel(image,startX+part*badge+px,startY+py,
+            (atlas[source]<<16)|(atlas[source+1]<<8)|atlas[source+2],atlas[source+3]/255.f);
+    }
+    if(count>shown)text.draw(image,L"+"+std::to_wstring(count-shown),
+        {startX,startY+badge,startX+shown*badge,startY+badge+18},12,settings.detailFont,settings.mutedColor);
+}
+
+Pixels raster_linear(const Status& current,bool vertical) {
+    Pixels result;result.bytes.resize(imageWidth*imageHeight*4);
+    if(current.wheel.empty())return result;
+    TextCanvas text;
+    const int count=static_cast<int>(current.wheel.size());
+    const int width=vertical?270:std::min(600,600/count);
+    const int height=vertical?std::min(72,520/count):142;
+    if(settings.showIcons || settings.showCounts){
+        std::vector<unsigned> ids;
+        if(settings.showIcons){ids.push_back(item_icons::menuSlotBase);ids.push_back(item_icons::menuSelectionWide);}
+        if(settings.showCounts)ids.push_back(current.slotLabel.starts_with(L"BOLT")?item_icons::menuBoltQuantity:item_icons::menuArrowQuantity);
+        if(settings.showIcons && settings.showItemIcons)for(const auto& item:current.wheel)ids.push_back(item.iconId);
+        item_icons::prefetch(ids);
+    }
+    const int titleY=vertical?std::max(16,320-count*height/2-52):213;
+    text.draw(result,current.slotLabel,{vertical?350:40,titleY,vertical?620:600,titleY+33},
+        settings.centerSize,settings.fontFamily,settings.textColor);
+    for(int line=0;line<2;++line)for(int px=vertical?350:40;px<(vertical?620:600);++px)
+        blend_pixel(result,px,titleY+36+line,settings.accentColor,.55f);
+    for(int i=0;i<count;++i){
+        const int x=vertical?350:320-count*width/2+i*width;
+        const int y=vertical?320-count*height/2+i*height:267;
+        const bool selected=i==current.selected;
+        const auto color=selected?settings.selectedFillColor:settings.backgroundColor;
+        for(int py=y;py<y+height-4;++py)for(int px=x;px<x+width-4;++px)
+            blend_pixel(result,px,py,color,settings.wheelOpacity/100.f*(1.f-.18f*(py-y)/height));
+        if(selected){
+            if(const auto bar=item_icons::request(item_icons::menuSelectionWide))
+                draw_menu_sprite(result,*bar,x+3,y+height-3,width-10,2);
+            else for(int px=x;px<x+width-4;++px)blend_pixel(result,px,y+height-5,settings.selectionColor,.85f);
+        }else for(int px=x;px<x+width-4;++px)blend_pixel(result,px,y+height-5,settings.accentColor,.4f);
+        const auto& item=current.wheel[i];
+        draw_linear_icons(result,text,item,x,y,width,height,vertical);
+        // List names share one line; other layouts wrap at the same fixed size.
+        const UINT nameFlags=vertical?DT_CENTER|DT_SINGLELINE|DT_VCENTER|DT_END_ELLIPSIS|DT_NOPREFIX:
+            DT_CENTER|DT_WORDBREAK|DT_END_ELLIPSIS|DT_NOPREFIX;
+        text.draw(result,item.name,{x+(vertical?62:7),y+(vertical?6:47),x+width-(vertical?10:11),y+(vertical?height-25:height-27)},
+            settings.nameSize,settings.fontFamily,selected?settings.selectedTextColor:settings.textColor,
+            nameFlags);
+        if(settings.showCounts)draw_quantity(result,text,item.count,
+            {x+(vertical?62:7),y+height-24,x+width-(vertical?68:11),y+height-5},settings.countSize,
+            selected?settings.selectedTextColor:settings.countColor,current.slotLabel.starts_with(L"BOLT"));
+    }
+    if(!vertical && current.selected>=0 && current.selected<count)
+        text.draw(result,current.wheel[current.selected].name,{40,418,600,454},settings.nameSize,
+            settings.fontFamily,settings.selectedTextColor);
+    const auto card=raster_card(current.name);
+    std::copy(card.bytes.begin()+indicatorRow*imageWidth*4,card.bytes.end(),result.bytes.begin()+indicatorRow*imageWidth*4);
+    return result;
+}
+
+struct OverlayText {
+    const Status* current;
+    Layout placement;
+    float opacity;
+};
+std::string utf8(const std::wstring& value){
+    if(value.empty())return {};
+    const int bytes=WideCharToMultiByte(CP_UTF8,0,value.data(),static_cast<int>(value.size()),nullptr,0,nullptr,nullptr);
+    if(bytes<=0)return {};
+    std::string result(static_cast<std::size_t>(bytes),'\0');
+    WideCharToMultiByte(CP_UTF8,0,value.data(),static_cast<int>(value.size()),result.data(),bytes,nullptr,nullptr);
+    return result;
+}
+void draw_overlay_text(ImDrawList* list,ImFont* font,const OverlayText& overlay,
+                       const std::wstring& value,float cx,float y,float maxWidth,float height,
+                       unsigned size,unsigned color,bool wrap=true){
+    if(!font || value.empty())return;
+    auto text=utf8(value);if(text.empty())return;
+    const float scale=overlay.placement.wheel.width/640.f;
+    const float pixelSize=size*scale*1.12f;
+    const float width=maxWidth*scale;
+    const float wrapWidth=wrap?width:0.f;
+    auto measured=font->CalcTextSizeA(pixelSize,FLT_MAX,wrapWidth,text.c_str());
+    if(measured.x>width || measured.y>height*scale){
+        auto shortened=text;
+        while(!shortened.empty()){
+            while(!shortened.empty() &&
+                (static_cast<unsigned char>(shortened.back())&0xC0)==0x80)shortened.pop_back();
+            if(!shortened.empty())shortened.pop_back();
+            text=shortened+"...";
+            measured=font->CalcTextSizeA(pixelSize,FLT_MAX,wrapWidth,text.c_str());
+            if(measured.x<=width && measured.y<=height*scale)break;
+        }
+    }
+    const float x=overlay.placement.wheel.x+cx*scale-measured.x*.5f;
+    const float top=overlay.placement.wheel.y+y*scale;
+    list->PushClipRect({overlay.placement.wheel.x+(cx-maxWidth*.5f)*scale,top},
+        {overlay.placement.wheel.x+(cx+maxWidth*.5f)*scale,top+height*scale},true);
+    const ImU32 tint=IM_COL32((color>>16)&255,(color>>8)&255,color&255,
+        static_cast<int>(std::clamp(overlay.opacity,0.f,1.f)*255));
+    list->AddText(font,pixelSize,{x,top},tint,text.c_str(),nullptr,wrapWidth);
+    list->PopClipRect();
+}
+void draw_overlay(ImDrawList* list,ImFont* font,void* data){
+    const auto& overlay=*static_cast<const OverlayText*>(data);
+    const auto& current=*overlay.current;
+    if(current.wheelOpen && !current.wheel.empty()){
+        const int count=static_cast<int>(current.wheel.size());
+        if(settings.selectionLayout==0){
+            constexpr double pi=3.14159265358979323846;
+            for(int i=0;i<count;++i){
+                const auto& item=current.wheel[static_cast<std::size_t>(i)];
+                const double angle=2*pi*i/count;
+                const float cx=320.f+194.f*static_cast<float>(std::sin(angle));
+                const float cy=320.f-194.f*static_cast<float>(std::cos(angle));
+                const float width=static_cast<float>(std::clamp(static_cast<int>(pi*194*.78/count),42,78)*2);
+                const unsigned color=i==current.selected?settings.selectedTextColor:settings.textColor;
+                if(settings.showEffectLabels)draw_overlay_text(list,font,overlay,item.effect,cx,cy-15,width,18,
+                    settings.effectSize,settings.mutedColor,false);
+                draw_overlay_text(list,font,overlay,item.name,cx,cy+(settings.showEffectLabels?2.f:-8.f),width,45,
+                    settings.nameSize,color);
+                if(settings.showCounts)draw_overlay_text(list,font,overlay,std::to_wstring(item.count),cx+8,cy+45,width-12,24,
+                    settings.countSize,i==current.selected?settings.selectedTextColor:settings.countColor,false);
+            }
+            const bool selected=current.selected>=0 && current.selected<count;
+            const float centerWidth=std::clamp(settings.cancelRadius*285.f/240.f*.83f,55.f,137.f)*2.f;
+            draw_overlay_text(list,font,overlay,selected?current.wheel[current.selected].name:L"Cancel",
+                320,270,centerWidth,72,settings.centerSize,
+                selected?settings.selectedTextColor:settings.textColor);
+            draw_overlay_text(list,font,overlay,selected?current.wheel[current.selected].effect:current.slotLabel,
+                320,345,centerWidth,24,settings.effectSize,settings.mutedColor,false);
+        }else{
+            const bool vertical=settings.selectionLayout==2;
+            const int width=vertical?270:std::min(600,600/count);
+            const int height=vertical?std::min(72,520/count):142;
+            const int titleY=vertical?std::max(16,320-count*height/2-52):213;
+            draw_overlay_text(list,font,overlay,current.slotLabel,vertical?485.f:320.f,static_cast<float>(titleY),
+                vertical?270.f:560.f,35,settings.centerSize,settings.textColor,false);
+            for(int i=0;i<count;++i){
+                const auto& item=current.wheel[static_cast<std::size_t>(i)];
+                const float x=static_cast<float>(vertical?350:320-count*width/2+i*width);
+                const float y=static_cast<float>(vertical?320-count*height/2+i*height:267);
+                const float nameLeft=x+(vertical?62.f:7.f);
+                const float nameRight=x+width-(vertical?10.f:11.f);
+                draw_overlay_text(list,font,overlay,item.name,(nameLeft+nameRight)*.5f,
+                    y+(vertical?6.f:47.f),nameRight-nameLeft,vertical?height-31.f:height-74.f,
+                    settings.nameSize,i==current.selected?settings.selectedTextColor:settings.textColor,!vertical);
+                if(settings.showCounts)draw_overlay_text(list,font,overlay,std::to_wstring(item.count),
+                    x+width*.52f,y+height-24.f,width*.5f,20,settings.countSize,
+                    i==current.selected?settings.selectedTextColor:settings.countColor,false);
+            }
+            if(!vertical && current.selected>=0 && current.selected<count)
+                draw_overlay_text(list,font,overlay,current.wheel[current.selected].name,320,418,560,36,
+                    settings.nameSize,settings.selectedTextColor,false);
+        }
+    }
+    if(settings.showIndicator && !current.name.empty()){
+        const auto name=utf8(current.name);
+        const float size=settings.indicatorNameSize*overlay.placement.indicator.width/cardReferenceWidth;
+        const ImVec2 extent=font->CalcTextSizeA(size,FLT_MAX,0,name.c_str());
+        const auto& card=overlay.placement.indicator;
+        list->AddText(font,size,{card.x+(card.width-extent.x)*.5f,card.y+4.f*card.height/cardReferenceHeight},
+            IM_COL32((settings.indicatorTextColor>>16)&255,(settings.indicatorTextColor>>8)&255,
+                settings.indicatorTextColor&255,static_cast<int>(std::clamp(overlay.opacity,0.f,1.f)*255)),name.c_str());
+    }
 }
 
 bool png(const wchar_t* filename,const std::uint8_t* pixels,UINT width,UINT height,UINT stride) {
@@ -392,6 +680,8 @@ float3 pq(float3 n) {
 }
 float4 ps(Vertex v) : SV_TARGET {
     float4 c=image.Sample(linearClamp,v.uv*uvScale+uvOffset);
+    float gray=dot(c.rgb,float3(0.2126,0.7152,0.0722));
+    c.rgb=max(0,gray+(c.rgb-gray)*1.12);
     c.rgb*=brightness;
     if(hdr>0.5 && c.a>0.0001) {
         float3 linearColor=pow(max(c.rgb/c.a,0),2.2);
@@ -418,6 +708,8 @@ float3 pq(float3 n) {
 }
 float4 ps(Output v) : SV_TARGET {
     float4 c=v.color;
+    float gray=dot(c.rgb,float3(0.2126,0.7152,0.0722));
+    c.rgb=max(0,gray+(c.rgb-gray)*1.12);
     c.rgb*=brightness;
     if(hdr>0.5 && c.a>0.0001) {
         float3 linearColor=pow(max(c.rgb/c.a,0),2.2);
@@ -607,6 +899,20 @@ bool render(IDXGISwapChain* swapchain,const Status& current,float opacity) {
     auto index=chain->GetCurrentBackBufferIndex();
     if (index>=r.frames.size()) return false;
     auto& f=r.frames[index];
+    const auto desc=f.backbuffer->GetDesc();
+    const bool sdr=desc.Format==DXGI_FORMAT_R8G8B8A8_UNORM || desc.Format==DXGI_FORMAT_B8G8R8A8_UNORM ||
+        desc.Format==DXGI_FORMAT_R8G8B8A8_UNORM_SRGB || desc.Format==DXGI_FORMAT_B8G8R8A8_UNORM_SRGB;
+    DXGI_SWAP_CHAIN_DESC swapDesc{};
+    bool useOverlay=false;
+    if((sdr || settings_ui::is_open()) && SUCCEEDED(swapchain->GetDesc(&swapDesc))){
+        auto format=desc.Format;
+        if(format==DXGI_FORMAT_R8G8B8A8_UNORM_SRGB)format=DXGI_FORMAT_R8G8B8A8_UNORM;
+        if(format==DXGI_FORMAT_B8G8R8A8_UNORM_SRGB)format=DXGI_FORMAT_B8G8R8A8_UNORM;
+        const bool installed=settings_ui::install(swapDesc.OutputWindow,r.device.Get(),r.queue.Get(),
+            static_cast<unsigned>(r.frames.size()),format,r.srvHeap.Get());
+        useOverlay=installed && sdr && settings.fontFamily==L"Palatino Linotype" &&
+            settings.detailFont==L"Segoe UI" && settings.indicatorFont==L"Palatino Linotype";
+    }
     auto completed=r.fence->GetCompletedValue();
     if (completed==UINT64_MAX) { r.failed=true; return false; }
     const auto iconsRevision=item_icons::revision();
@@ -614,7 +920,11 @@ bool render(IDXGISwapChain* swapchain,const Status& current,float opacity) {
     if (completed<f.fence || (newTexture && completed<r.lastFence)) return false; // Never reset GPU work still in flight.
     if (FAILED(f.allocator->Reset()) || FAILED(r.commands->Reset(f.allocator.Get(),r.pipeline.Get()))) { r.failed=true; return false; }
     if (newTexture) {
-        auto image=current.wheelOpen?raster_wheel(current,false):raster_card(current.name,current.count,current.indicatorLabel);
+        suppressRasterText=useOverlay;
+        auto image=current.wheelOpen?(settings.selectionLayout==0?raster_wheel(current,false):
+            raster_linear(current,settings.selectionLayout==2)):
+            raster_card(current.name);
+        suppressRasterText=false;
         void* mapped{}; D3D12_RANGE noRead{0,0};
         if (FAILED(r.upload->Map(0,&noRead,&mapped))) { r.commands->Close(); return false; }
         for (UINT row=0;row<imageHeight;++row)
@@ -628,7 +938,6 @@ bool render(IDXGISwapChain* swapchain,const Status& current,float opacity) {
         auto b=transition(r.texture.Get(),D3D12_RESOURCE_STATE_COPY_DEST,D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE); r.commands->ResourceBarrier(1,&b);
         r.uploaded=true; r.textureSerial=current.serial;r.iconRevision=iconsRevision;
     }
-    const auto desc=f.backbuffer->GetDesc();
     const float width=static_cast<float>(desc.Width),height=static_cast<float>(desc.Height);
     const auto placement=layout(width,height,settings.wheelScale,settings.scale,settings.indicatorGap,
         settings.wheelOffsetX,settings.wheelOffsetY,settings.indicatorOffsetX,settings.indicatorOffsetY);
@@ -647,7 +956,7 @@ bool render(IDXGISwapChain* swapchain,const Status& current,float opacity) {
     r.commands->RSSetViewports(1,&viewport); r.commands->RSSetScissorRects(1,&scissor);
     r.commands->OMSetRenderTargets(1,&f.rtv,FALSE,nullptr);
     if(previewBackdrop){const float clear[]{.055f,.065f,.055f,1.f};r.commands->ClearRenderTargetView(f.rtv,clear,0,nullptr);}
-    if(current.wheelOpen) {
+    if(current.wheelOpen && settings.selectionLayout==0) {
         const auto geometry=wheel_geometry(current);
         if(geometry.size()>maxWheelVertices){r.commands->Close();return false;}
         void* mapped{};
@@ -676,14 +985,9 @@ bool render(IDXGISwapChain* swapchain,const Status& current,float opacity) {
         r.commands->SetGraphicsRoot32BitConstants(0,12,constants,0);
         r.commands->DrawInstanced(6,1,0,0);
     }
-    if(settings_ui::is_open()){
-        DXGI_SWAP_CHAIN_DESC swapDesc{};
-        auto uiFormat=desc.Format;
-        if(uiFormat==DXGI_FORMAT_R8G8B8A8_UNORM_SRGB)uiFormat=DXGI_FORMAT_R8G8B8A8_UNORM;
-        if(uiFormat==DXGI_FORMAT_B8G8R8A8_UNORM_SRGB)uiFormat=DXGI_FORMAT_B8G8R8A8_UNORM;
-        if(SUCCEEDED(swapchain->GetDesc(&swapDesc)) && settings_ui::install(swapDesc.OutputWindow,r.device.Get(),r.queue.Get(),
-            static_cast<unsigned>(r.frames.size()),uiFormat,r.srvHeap.Get()))
-            settings_ui::render(r.commands.Get());
+    if(useOverlay || settings_ui::is_open()){
+        OverlayText overlay{&current,placement,opacity};
+        settings_ui::render(r.commands.Get(),useOverlay?draw_overlay:nullptr,useOverlay?&overlay:nullptr);
     }
     auto out=transition(f.backbuffer.Get(),D3D12_RESOURCE_STATE_RENDER_TARGET,D3D12_RESOURCE_STATE_PRESENT);
     r.commands->ResourceBarrier(1,&out);
@@ -893,7 +1197,7 @@ bool preview(const wchar_t* filename,Logger diagnostics,const Settings* options)
     const auto save=[&](const wchar_t* suffix,const Pixels& image){
         const auto path=std::wstring(filename)+suffix;return png(path.c_str(),image.bytes.data(),imageWidth,imageHeight,imageWidth*4);
     };
-    if(!save(L"",raster_card(L"Stormwing Bone Arrow",20,L"ARROW SLOT 1")))return false;
+    if(!save(L"",raster_card(L"Stormwing Bone Arrow")))return false;
     Status example;example.name=L"Stormwing Bone Arrow";example.id=50190000;example.count=20;
     example.changed=GetTickCount64();example.serial=1;
     Status wheel;
@@ -909,6 +1213,15 @@ bool preview(const wchar_t* filename,Logger diagnostics,const Settings* options)
     wheel.wheel.push_back({L"Stormwing Bone Arrow",15,L'\u2191',0xD1C39A,L"PHYSICAL",effects::bit(effects::physical)});
     wheel.slotLabel=L"ARROW SLOT 1  2/3";wheel.selected=-1;++wheel.serial;
     if(!save(L".page.png",raster_wheel(wheel)))return false;
+    Status linear=wheel;linear.selected=1;
+    Status strip=linear;strip.wheel.resize(4);strip.slotLabel=L"ARROW SLOT 1  1/2";
+    if(!save(L".strip.png",raster_linear(strip,false)))return false;
+    if(!save(L".list.png",raster_linear(linear,true)))return false;
+    Status bolts=wheel;
+    bolts.slotLabel=L"BOLT SLOT 1";bolts.selected=5;
+    bolts.wheel={{L"Bolt",100},{L"Black-Key Bolt",30},{L"Burred Bolt",20},{L"Meteor Bolt",20},
+        {L"Golden Bolt",10},{L"Lightningbone Bolt",50},{L"Flaming Bolt",20}};
+    if(!save(L".bolt-list.png",raster_linear(bolts,true)))return false;
     wheel.selected=1;++wheel.serial;if(!save(L".foreground.png",raster_wheel(wheel,false)))return false;
     Discovery probe;if(!probe.create(true))return false;
     capturedQueue.store(probe.queue.Get());previewBackdrop=true;
@@ -919,6 +1232,16 @@ bool preview(const wchar_t* filename,Logger diagnostics,const Settings* options)
     SetWindowPos(probe.window,nullptr,0,0,client.right-client.left,client.bottom-client.top,SWP_NOMOVE|SWP_NOACTIVATE|SWP_NOZORDER);
     ok=ok && SUCCEEDED(probe.chain->ResizeBuffers(2,1280,900,DXGI_FORMAT_R8G8B8A8_UNORM,0));
     if(ok)ok=render(probe.chain.Get(),wheel,1.f) && capture_frame(probe.chain3.Get(),std::wstring(filename)+L".gpu-wheel.png");
+    if(ok){
+        const auto previewLayout=settings.selectionLayout;
+        settings.selectionLayout=1;strip.serial=wheel.serial+1;
+        ok=render(probe.chain.Get(),strip,1.f) &&
+            capture_frame(probe.chain3.Get(),std::wstring(filename)+L".gpu-strip.png");
+        settings.selectionLayout=2;linear.serial=wheel.serial+2;
+        if(ok)ok=render(probe.chain.Get(),linear,1.f) &&
+            capture_frame(probe.chain3.Get(),std::wstring(filename)+L".gpu-list.png");
+        settings.selectionLayout=previewLayout;renderer.textureSerial=UINT64_MAX;
+    }
     // Exercise the actual ImGui backend, font upload and shared descriptor heap.
     const auto ini=std::filesystem::path(std::wstring(filename)+L".settings-test.ini");
     if(ok){

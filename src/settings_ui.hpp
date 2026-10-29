@@ -3,6 +3,8 @@
 #include <d3d12.h>
 #include <filesystem>
 #include <cstdint>
+struct ImDrawList;
+struct ImFont;
 
 namespace arrow_switch::settings_ui {
 // Attach before the panel is opened so wheel/settings shortcuts receive events.
@@ -20,7 +22,8 @@ void mouse_input(const RAWMOUSE& mouse);
 void synchronize();
 bool install(HWND window,ID3D12Device* device,ID3D12CommandQueue* queue,
     unsigned frames,DXGI_FORMAT format,ID3D12DescriptorHeap* heap);
-void render(ID3D12GraphicsCommandList* commands);
+using OverlayDraw=void(*)(ImDrawList*,ImFont*,void*);
+void render(ID3D12GraphicsCommandList* commands,OverlayDraw overlay=nullptr,void* data=nullptr);
 // Release ImGui/graphics resources; input stays attached until window destruction.
 void shutdown();
 }

@@ -11,8 +11,8 @@ int main() {
     const auto file=std::filesystem::current_path()/(L"theme-test-"+std::to_wstring(GetCurrentProcessId())+L".ini");
     assert(config_file::ensure(file));
     auto s=theme::load(file);
-    assert(s.textColor==0xF4EBD6 && s.wheelOpacity==72 && s.wheelScale==100);
-    assert(s.showCounts && !s.showEffectLabels && s.showIndicator);
+    assert(s.textColor==0xF4EBD6 && s.wheelOpacity==84 && s.wheelScale==100);
+    assert(s.showCounts && !s.showEffectLabels && s.showIndicator && s.blockCameraWhileSelecting);
     {
         std::ofstream output(file,std::ios::trunc);
         output<<"[Theme]\nOffsetX=-120\nWheelOpacityPercent=0\nNameFontSize=999\n"
@@ -30,10 +30,12 @@ int main() {
     wchar_t binding[64]{};
     GetPrivateProfileStringW(L"Controls",L"Arrow1WheelKey",L"",binding,64,file.c_str());
     assert(std::wstring(binding)==L"Ctrl+Q");
-    s.indicatorTextColor=0xABCDEF;s.fontFamily=L"Georgia";s.wheelOffsetY=-75;s.showCounts=false;
+    s.indicatorTextColor=0xABCDEF;s.fontFamily=L"Georgia";s.wheelOffsetY=-75;s.showCounts=false;s.selectionLayout=2;
+    s.blockCameraWhileSelecting=false;
     assert(theme::save(file,s));
     const auto saved=theme::load(file);
     assert(saved.indicatorTextColor==0xABCDEF && saved.fontFamily==L"Georgia" && saved.wheelOffsetY==-75 && !saved.showCounts);
+    assert(saved.selectionLayout==2 && !saved.blockCameraWhileSelecting);
     GetPrivateProfileStringW(L"Controls",L"SettingsKey",L"",binding,64,file.c_str());
     assert(std::wstring(binding)==L"None");
     s=theme::load(file);
@@ -47,7 +49,7 @@ int main() {
                 assert(rect.x+rect.width<=width-7.99f && rect.y+rect.height<=height-7.99f);
             }
             assert(std::abs(l.wheel.width-l.wheel.height)<.01f);
-            assert(std::abs(l.indicator.width/l.indicator.height-420.f/88.f)<.01f);
+            assert(std::abs(l.indicator.width/l.indicator.height-420.f/52.f)<.01f);
         }
         const auto normal=indicator::layout(width,height,100,100,24,0,0,0,0);
         assert(normal.indicator.y>=normal.wheel.y+normal.wheel.height);

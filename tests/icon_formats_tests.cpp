@@ -5,6 +5,12 @@ int main(){
     const std::string xml=R"(<TextureAtlas imagePath="atlas.dds"><SubTexture name="MENU_ItemIcon_06000.png" x="32" y="64" width="128" height="128"/><SubTexture name="MENU_ItemIcon_06001d.png" x="0" y="0" width="128" height="128"/><SubTexture name="MENU_ItemIcon_06002.png" x="0" y="0" width="0" height="128"/></TextureAtlas>)";
     const auto layout=parse_layout(View(reinterpret_cast<const std::uint8_t*>(xml.data()),xml.size()));
     assert(layout.size()==1 && layout.at(6000).x==32 && layout.at(6000).atlas=="atlas");
+    const std::string menuXml=R"(<TextureAtlas imagePath="menu.dds"><SubTexture name="MENU_SlotBase.png" x="1" y="2" width="314" height="318"/><SubTexture name="MENU_FL_Cursor_Wide.png" x="3" y="4" width="594" height="52"/></TextureAtlas>)";
+    const auto menu=parse_layout(View(reinterpret_cast<const std::uint8_t*>(menuXml.data()),menuXml.size()));
+    assert(menu.size()==2 && menu.at(0xF0000001u).atlas=="menu" && menu.at(0xF0000002u).width==594);
+    const std::string quantityXml=R"(<TextureAtlas imagePath="menu.dds"><SubTexture name="MENU_SL_Arrow.png" x="1" y="2" width="51" height="92"/><SubTexture name="MENU_SL_Bolt.png" x="3" y="4" width="44" height="75"/></TextureAtlas>)";
+    const auto quantities=parse_layout(View(reinterpret_cast<const std::uint8_t*>(quantityXml.data()),quantityXml.size()));
+    assert(quantities.size()==2 && quantities.at(0xF0000003u).width==51 && quantities.at(0xF0000004u).height==75);
     assert(path_hash("menu/hi/01_common.tpf.dcx")==path_hash("/MENU\\HI\\01_common.tpf.dcx"));
     Bytes truncated(4,0);assert(tpf_texture(truncated,"atlas").empty());
     bool caught=false;try{value<std::uint64_t>(truncated,0);}catch(const std::exception&){caught=true;}assert(caught);

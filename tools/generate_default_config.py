@@ -43,6 +43,9 @@ PreviousPageButton=LB
 SettingsButton=Back+Start
 RightStickDeadzonePercent=25
 TriggerThreshold=180
+; Experimental: keyboard-opened wheels can use the game's native camera vector.
+; Suppresses camera input while that wheel is open. Disabled until in-game validation.
+ExperimentalNativeCameraSelection=0
 
 [Switching]
 Enabled=1
@@ -53,6 +56,17 @@ RequestTimeoutMs=3000
 ; 0 allows normal/great arrows or bolts/ballista bolts in the same wheel.
 ; 1 only offers ammo of the type currently equipped in that slot.
 CycleSameFamily=0
+SelectionLayout=0
+; Keep the camera still while a keyboard-opened radial wheel uses mouse movement for selection.
+; Set to 0 to let the game camera move normally. Strip and list styles are unaffected.
+BlockCameraWhileSelecting=1
+; Optional shared control: a short tap equips the next eligible ammo, a hold opens the wheel.
+; Applies to the dedicated wheel bindings above. Keep disabled for buttons that already cycle ammo in game.
+TapHoldCycle=0
+TapHoldThresholdMs=220
+; Experimental: request the game's quick-item HUD flash/visibility after an ammo switch.
+; Verified against the supported executable's static instructions, pending in-game confirmation for ammo slots.
+ExperimentalNativeHudFeedback=0
 
 [Indicator]
 ; Enabled controls the whole overlay. ShowAmmoText hides only the text below the wheel.
@@ -61,11 +75,9 @@ ShowAmmoText=1
 AlwaysShow=0
 DurationMs=3500
 ScalePercent=100
-FontFamily=Cambria
+FontFamily=Palatino Linotype
 NameFontSize=22
-DetailFontSize=11
 TextColor=#F4EBD6
-DetailColor=#C7B585
 ; Position relative to the wheel in reference pixels at 1080p.
 Gap=24
 OffsetX=0
@@ -76,7 +88,7 @@ FadeOutMs=600
 [Theme]
 ; Save changes with the wheel closed. Appearance reloads within about half a second.
 ; Colors use #RRGGBB. Opacity affects surfaces, not text or icons.
-WheelOpacityPercent=72
+WheelOpacityPercent=84
 WheelScalePercent=100
 OffsetX=0
 OffsetY=0
@@ -88,7 +100,7 @@ TextColor=#F4EBD6
 MutedTextColor=#BDB49F
 CountColor=#D9CFB9
 SelectedTextColor=#FFE6A6
-FontFamily=Cambria
+FontFamily=Palatino Linotype
 DetailFontFamily=Segoe UI
 NameFontSize=18
 CountFontSize=16

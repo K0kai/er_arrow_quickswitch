@@ -68,7 +68,17 @@ inline IconLayout parse_layout(View bytes) {
             const auto tag=text.substr(sub,close-sub);
             auto name=attribute(tag,"name");
             constexpr std::string_view prefix="MENU_ItemIcon_";
-            if(name.starts_with(prefix)){
+            unsigned namedId=0;
+            if(name=="MENU_SlotBase.png")namedId=0xF0000001u;
+            if(name=="MENU_FL_Cursor_Wide.png")namedId=0xF0000002u;
+            if(name=="MENU_SL_Arrow.png")namedId=0xF0000003u;
+            if(name=="MENU_SL_Bolt.png")namedId=0xF0000004u;
+            if(namedId){
+                IconRect rect{atlas,integer(attribute(tag,"x")),integer(attribute(tag,"y")),
+                    integer(attribute(tag,"width")),integer(attribute(tag,"height"))};
+                if(rect.width && rect.height && rect.width<=4096 && rect.height<=4096 && !atlas.empty())
+                    result.try_emplace(namedId,std::move(rect));
+            }else if(name.starts_with(prefix)){
                 name.remove_prefix(prefix.size());const auto dot=name.find('.');
                 if(dot!=name.npos){
                     const auto id=integer(name.substr(0,dot));

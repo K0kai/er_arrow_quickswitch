@@ -8,15 +8,19 @@
 
 [size=4][b][color=#6d9eeb]What it does[/color][/b][/size]
 
-Hold a key, point the mouse toward the ammo you want, and release. That's it. Arrow Wheel adds [b]four wheels[/b], one for each arrow slot and one for each bolt slot, with optional controller support.
+Hold a key, choose the ammo you want, and release. Arrow Wheel adds [b]four selectors[/b], one for each arrow slot and one for each bolt slot, with optional controller support.
 
 [list]
 [*][b]Wheels:[/b] arrow slots 1 and 2 on [b]1[/b] and [b]2[/b], bolt slots 1 and 2 on [b]3[/b] and [b]4[/b] (rebindable).[/*]
 [*][b]What's shown:[/b] only ammo you actually own. Arrow wheels list arrows and greatarrows, bolt wheels list bolts and ballista bolts. Empty stacks and ammo already equipped in the paired slot are hidden.[/*]
 [*][b]Info on each wedge:[/b] name in your game language, quantity, item artwork, and damage/status badges. Multiple effects can appear together.[/*]
-[*][b]Many arrows?[/b] More than eight types are split into pages. Hold the wheel key and scroll [b]up[/b] for the next page, [b]down[/b] for the previous one.[/*]
+[*][b]Many arrows?[/b] Long lists are split into pages. Scroll to change pages on the radial wheel or step through items in the strip and list.[/*]
 [*][b]Works with modded ammo:[/b] names and effects are read from the running game, so there are no fixed ammo ID lists and no Convergence-specific tables.[/*]
-[*][b]Controller (optional):[/b] hold a bound button, aim with the right stick, release. Page with [b]RB[/b]/[b]LB[/b]. Press [b]Back+Start[/b] to open or close settings.[/*]
+[*][b]Controller (optional):[/b] hold a bound button, aim with the right stick on the radial wheel, or step through strip/list items with [b]RB[/b]/[b]LB[/b]. Press [b]Back+Start[/b] to open or close settings.[/*]
+[*][b]Selection styles:[/b] use the radial wheel, a horizontal strip, a side list, or a quick strip. The strip and list use scrolling or controller page buttons to move through ammo.[/*]
+[*][b]Optional tap and hold:[/b] use a short press to cycle ammo and a hold to open the selector.[/*]
+[*][b]Camera control:[/b] the radial wheel keeps the camera still while the mouse chooses ammo by default; this can be disabled.[/*]
+[*][b]Clearer display:[/b] improved text rendering, smoother artwork, and adjustable contrast and colors.[/*]
 [/list]
 
 [line]
@@ -36,7 +40,7 @@ Hold a key, point the mouse toward the ammo you want, and release. That's it. Ar
 [list]
 [*][b]Vanilla Elden Ring 1.17.2[/b][/*]
 [*][b][color=#f1c232]Elden Ring Reforged 2.3.7.1[/color][/b][/*]
-[*][b][color=#6d9eeb]The Convergence 3.0.3.0[/color]:[/b] awaiting a version for Elden Ring 1.17.2.[/*]
+[*][b]The Convergence:[/b] a local 1.17.2 setup was used to test radial selection and camera blocking. Broader compatibility remains unverified.[/*]
 [/list]
 
 Physical controllers have not been verified in-game on the supported game build.
@@ -62,7 +66,7 @@ load_early = false
 initializer.function = "QuickSwitchInitialize"[/code]
 [/*]
 [*]Launch through that ME3 profile.[/*]
-[*]Hold [b]1/2/3/4[/b], point, and release. A wheel can equip ammo into an empty slot. Pointing at the center cancels.[/*]
+[*]Hold [b]1/2/3/4[/b], choose ammo, and release. The radial wheel can equip ammo into an empty slot; pointing at the center cancels.[/*]
 [/list]
 
 Nothing needs to be copied into the Elden Ring folder.
@@ -74,9 +78,9 @@ Nothing needs to be copied into the Elden Ring folder.
 Press [b]F10[/b] or [b]Back+Start[/b] on a controller during gameplay to open the settings panel, powered by [b]Dear ImGui[/b]. Open a wheel once to populate its preview.
 
 [list]
-[*][b]Wheel and indicator:[/b] customize colors, transparency, size, position, text, icons, selection lighting, and decorative trim. The ammo indicator can also be turned off.[/*]
+[*][b]Wheel and indicator:[/b] choose a selection style, camera behavior, colors, transparency, size, position, text, icons, selection lighting, and decorative trim. The ammo indicator can also be turned off.[/*]
 [*][b]Controls:[/b] change keyboard and controller bindings for all four wheels, controller paging, and the settings panel. Click a binding and press the desired key or mouse button; hold controller buttons together and release to capture a chord. Escape cancels. Manual name entry is also available. Keyboard chords such as [font=Courier New]Ctrl+E[/font] and controller chords such as [font=Courier New]LT+DPadUp[/font] are supported.[/*]
-[*][b]Behavior:[/b] toggle sounds and restrict each wheel to its equipped ammo type, if preferred. An empty slot ignores this restriction for its first selection.[/*]
+[*][b]Behavior:[/b] toggle sounds, use optional tap and hold cycling, and restrict each selector to its equipped ammo type, if preferred. An empty slot ignores this restriction for its first selection.[/*]
 [/list]
 
 Appearance changes preview immediately. Save to keep them and apply controls and behavior without restarting. Controller buttons still reach the game, so choose bindings that avoid gameplay conflicts.

@@ -21,7 +21,7 @@ actual location on your PC:
   initializer.function = "QuickSwitchInitialize"
 
 Launch through that profile. Hold 1, 2, 3, or 4 for the corresponding arrow or bolt
-wheel, point, and release to equip. The center cancels. Press F10 or Back+Start on an XInput controller to open the settings panel.
+selector, choose an item, and release to equip. The radial center cancels. Press F10 or Back+Start on an XInput controller to open the settings panel.
 Save to apply them without restarting. Bindings can also be edited in
 dist/ArrowQuickSwitch.ini.
 The mod creates that INI on first launch and adds new settings after updates
@@ -32,9 +32,11 @@ ammo type. The default 0 allows normal/great arrows or bolts/ballista bolts.
 When a slot is empty, its first wheel selection ignores CycleSameFamily so
 any eligible owned ammo of that slot's arrow or bolt families can be equipped.
 
-Version 0.6.3 was tested in-game on vanilla Elden Ring 1.17.2 and Reforged
-2.3.7.1. Convergence has not been retested on Elden Ring 1.17.2. Physical
-controller input has automated checks but no confirmed in-game test.
+Version 0.7.0 adds radial, strip, list, and quick-strip selection styles, optional
+tap and hold cycling, and configurable camera blocking during radial mouse selection.
+The earlier 0.6.3 release was tested in-game on vanilla Elden Ring 1.17.2 and
+Reforged 2.3.7.1. A local Convergence setup was used to test radial camera blocking.
+The new styles and physical controller input still need broader in-game validation.
 
 Press F10 or Back+Start during gameplay for customization. Open a wheel once to populate the
 preview, adjust settings, then save. The panel does not pause the game.

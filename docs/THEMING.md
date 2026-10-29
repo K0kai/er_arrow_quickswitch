@@ -6,6 +6,10 @@ The Behavior tab controls ammo filtering, sound, and the keyboard settings short
 
 The mod creates its INI on first launch and adds missing options after updates. Keep your existing INI when updating. Appearance, audio, ammo filtering, and the settings shortcut also reload after external edits within about half a second while no wheel or equip request is active.
 
+The optional `[Switching] TapHoldCycle=1` changes the dedicated wheel bindings: a tap equips the next eligible ammunition, and a hold of at least `TapHoldThresholdMs` (default 220) opens the wheel. This tap action also replaces the quick strip's previous-ammo tap while the option is enabled. These bindings still reach the game, so choose keys or controller chords that do not already trigger an ammunition action. Restart after changing these two keys. A pending switch is cancelled when gameplay or focus is lost.
+
+The keyboard-opened radial wheel consumes relative mouse movement for selection, so that movement does not also turn the camera. This is enabled by default. Clear **Block camera while selecting with mouse** in the Wheel tab, or set `[Switching] BlockCameraWhileSelecting=0`, to allow normal camera movement. The setting reloads after the wheel closes. Strip and list styles keep normal camera movement. Two experimental options are available for offline testing on the supported executable. `[Controller] ExperimentalNativeCameraSelection=1` lets a keyboard-opened radial wheel use the game's camera input vector; XInput-opened wheels continue to use XInput. `[Switching] ExperimentalNativeHudFeedback=1` requests the game's quick-item HUD flash and visibility flag after a verified ammunition switch. The exact visual behavior for ammunition remains unverified in game. Both options default to `0` and require a restart.
+
 ## Rebinding controls
 
 In the Controls tab, click the current binding and press the desired key or mouse
@@ -25,13 +29,13 @@ These keys belong in `[Theme]`. Colors use `#RRGGBB`. Positions and font sizes u
 
 | Keys | Defaults | Purpose |
 | --- | --- | --- |
-| `WheelScalePercent`, `WheelOpacityPercent` | `100`, `72` | Size (50–150%) and surface opacity (0–100%). |
+| `WheelScalePercent`, `WheelOpacityPercent` | `100`, `84` | Size (50–150%) and surface opacity (0–100%). |
 | `OffsetX`, `OffsetY` | `0`, `0` | Position; negative moves left/up. |
 | `BackgroundColor`, `SelectedFillColor` | `#141815`, `#49402D` | Wedge and selected fill. |
 | `AccentColor`, `SelectionColor` | `#A18C61`, `#E1C484` | Borders and selection marker/outlines. |
 | `TextColor`, `SelectedTextColor` | `#F4EBD6`, `#FFE6A6` | Item names and selected text. |
 | `MutedTextColor`, `CountColor` | `#BDB49F`, `#D9CFB9` | Details and quantities. |
-| `FontFamily`, `DetailFontFamily` | `Cambria`, `Segoe UI` | Installed Windows fonts. |
+| `FontFamily`, `DetailFontFamily` | `Palatino Linotype`, `Segoe UI` | Installed Windows fonts. |
 | `NameFontSize`, `CountFontSize` | `18`, `16` | Name and quantity size. |
 | `EffectFontSize`, `CenterFontSize` | `11`, `22` | Detail and center size. |
 | `TextShadow`, `ShowCounts`, `ShowEffectLabels` | `1`, `1`, `0` | Readability and label visibility. |
@@ -48,22 +52,34 @@ Long names automatically reduce their font size to fit complete lines. The setti
 
 Additional `[Theme]` controls: `ContentBrightnessPercent=115` brightens text/artwork independently (75–150), `SelectionGlowPercent=70` controls highlight lighting (0–100), and `IconBackdropOpacityPercent=45` gives artwork a soft backdrop (0–80). `DecorativeRings=1` enables the outer trim; `AnimateSelection=1` adds a gentle selected-wedge glow. All are available in the Wheel tab.
 
+Item names retain the chosen font size in every selector. Wheel and strip labels
+wrap and use an ellipsis when needed; list labels use a wider single line. The
+strip also shows the selected name below its cards. Scroll the mouse wheel to
+step through list or strip items; crossing the last or first entry on a page
+changes pages automatically. The controller next/previous bindings perform the
+same item steps. The radial wheel retains directional selection and page controls.
+The strip displays four cards per page; the list and wheel display up to eight.
+
 ## Runtime item artwork
 
 The mod reads each ammo item's icon ID from the live weapon parameters. A background worker reads the installed menu layout and texture, decompresses the container, decodes the BC texture, and caches a small image in memory. It reads only the named `menu/low/01_common` or `menu/hi/01_common` files and their relevant archive ranges. It does not unpack the game or write extracted pictures during play. New artwork may appear shortly after opening a wheel for the first time.
+
+The strip and list also request the game's `MENU_SlotBase.png` and `MENU_FL_Cursor_Wide.png` sprites from those installed menu atlases. The first is used around each ammo image; the second marks the selected entry. These sprites load through the same cache and respect the configured icon source directory. They are not packaged with the mod.
+
+Quantities in every selector use `MENU_SL_Arrow.png` or `MENU_SL_Bolt.png` before the number. These installed-game glyphs are tinted to the quantity text color. A small drawn bundle is used if the asset is unavailable.
 
 Convergence and Reforged roots are detected from loaded native modules when possible. Loader/loose files and packed vanilla assets are also checked. If your replacement textures live elsewhere, choose the root containing the `menu` folder with `IconSourceDirectory` or the panel. Missing/unsupported artwork falls back to effect badges. No arrow/bolt artwork is shipped. An optional local `assets/wheel-game-icons.rgba` file supplies legacy damage/status badges; without it, the renderer uses fallback symbols. This game-derived sheet is not included in the source repository.
 
 ## Ammo indicator
 
-The indicator is text only with a transparent background. Its scale and placement are independent of the wheel and remain consistent after closing it. `[Indicator] Enabled=0` retains its legacy meaning of disabling the overlay; use `ShowAmmoText=0` to hide only the indicator.
+The indicator shows only the selected ammo name on a transparent background. Quantity appears beside an arrow or bolt bundle glyph in every selector design. Its scale and placement are independent of the selector and remain consistent after closing it. `[Indicator] Enabled=0` retains its legacy meaning of disabling the overlay; use `ShowAmmoText=0` to hide only the indicator.
 
 | `[Indicator]` keys | Defaults | Purpose |
 | --- | --- | --- |
 | `ShowAmmoText`, `AlwaysShow` | `1`, `0` | Visibility and persistent display. |
 | `DurationMs`, `ScalePercent` | `3500`, `100` | Duration (500–30000 ms) and scale (50–200%). |
-| `FontFamily`, `NameFontSize`, `DetailFontSize` | `Cambria`, `22`, `11` | Name font and text sizes; details use the theme detail font. |
-| `TextColor`, `DetailColor` | `#F4EBD6`, `#C7B585` | Text colors. |
+| `FontFamily`, `NameFontSize` | `Palatino Linotype`, `22` | Indicator name font and size. |
+| `TextColor` | `#F4EBD6` | Indicator name color. |
 | `Gap`, `OffsetX`, `OffsetY` | `24`, `0`, `0` | Gap below the wheel canvas and relative offsets. |
 | `FadeInMs`, `FadeOutMs` | `180`, `600` | Smooth fade timing; 0 disables that fade. |
 

@@ -5,6 +5,7 @@
 #include "wheel_bindings.hpp"
 #include "controller.hpp"
 #include "wheel.hpp"
+#include "list_navigation.hpp"
 #include "ammo_effects.hpp"
 #include "config_file.hpp"
 #include "theme_config.hpp"
@@ -14,6 +15,7 @@
 #include <MinHook.h>
 #include <atomic>
 #include <bit>
+#include <cmath>
 #include <cstdarg>
 #include <cstdio>
 #include <filesystem>
@@ -32,9 +34,16 @@ game::Addresses addresses;
 std::uintptr_t namesStatic{};
 indicator::Settings indicatorSettings;
 bool refreshIndicator{};
+bool hudFeedbackAvailable{};
 std::atomic<int> rawDx{},rawDy{};
 std::atomic<int> rawPageSteps{};
 std::atomic<bool> rawWheelOpen{};
+std::atomic<bool> rawCameraBlock{};
+std::atomic<bool> nativeCameraWheelOpen{};
+std::atomic<int> nativeCameraX{},nativeCameraY{};
+std::atomic<bool> nativeCameraSelected{};
+using CameraInputUpdate=void(*)(void*,bool);
+CameraInputUpdate originalCameraInputUpdate{};
 using RawInputData=UINT(WINAPI*)(HRAWINPUT,UINT,LPVOID,PUINT,UINT);
 RawInputData originalRawInputData{};
 using XInputGetStateFn=DWORD(WINAPI*)(DWORD,XINPUT_STATE*);
@@ -69,8 +78,13 @@ struct Config {
     unsigned settle=150, timeout=3000;
     bool deferMouse=true;
     bool cycleSameFamily=false;
+    unsigned selectionLayout=0;
     unsigned cancelRadius=78;
     bool soundEnabled=true;
+    bool nativeHudFeedback=false;
+    bool nativeCameraSelection=false;
+    bool tapHoldCycle=false;
+    unsigned tapHoldThreshold=220;
     unsigned hoverSoundCooldown=90;
 } config;
 AmmoSlot activeIndicatorSlot=AmmoSlot::arrow1;
@@ -156,10 +170,17 @@ bool load_config() {
     config.timeout=get(L"Switching",L"RequestTimeoutMs",3000);
     config.deferMouse=get(L"Switching",L"DeferWhileMouseHeld",1)!=0;
     config.cycleSameFamily=get(L"Switching",L"CycleSameFamily",0)!=0;
+    config.selectionLayout=std::clamp(get(L"Switching",L"SelectionLayout",0),0u,3u);
     config.soundEnabled=get(L"Audio",L"Enabled",1)!=0;
+    config.nativeHudFeedback=get(L"Switching",L"ExperimentalNativeHudFeedback",0)!=0;
+    config.nativeCameraSelection=get(L"Controller",L"ExperimentalNativeCameraSelection",0)!=0;
+    config.tapHoldCycle=get(L"Switching",L"TapHoldCycle",0)!=0;
+    config.tapHoldThreshold=static_cast<unsigned>(get(L"Switching",L"TapHoldThresholdMs",220));
+    if(config.tapHoldThreshold<120 || config.tapHoldThreshold>600)return false;
     config.hoverSoundCooldown=std::clamp(get(L"Audio",L"HoverCooldownMs",90),50u,300u);
     enabled.store(get(L"Switching",L"Enabled",1)!=0);
     indicatorSettings=theme::load(ini);
+    indicatorSettings.selectionLayout=config.selectionLayout;
     config.cancelRadius=indicatorSettings.cancelRadius;
     const std::array<input::Binding,6> keys{config.diagnostic,config.wheel,config.settingsKey,
         config.otherWheels[0],config.otherWheels[1],config.otherWheels[2]};
@@ -184,6 +205,10 @@ UINT WINAPI hooked_raw_input(HRAWINPUT input,UINT command,LPVOID data,PUINT size
         if(raw->header.dwType==RIM_TYPEMOUSE && !(raw->data.mouse.usFlags&MOUSE_MOVE_ABSOLUTE)) {
             rawDx.fetch_add(raw->data.mouse.lLastX,std::memory_order_relaxed);
             rawDy.fetch_add(raw->data.mouse.lLastY,std::memory_order_relaxed);
+            // The wheel has consumed this relative movement. Keep buttons and
+            // wheel events intact while preventing the game camera from using it.
+            window_input::consume_camera_motion(raw->data.mouse,
+                rawCameraBlock.load(std::memory_order_acquire));
         }
         if(raw->header.dwType==RIM_TYPEMOUSE && (raw->data.mouse.usButtonFlags&RI_MOUSE_WHEEL)){
             rawPageSteps.fetch_add(static_cast<SHORT>(raw->data.mouse.usButtonData)/WHEEL_DELTA,std::memory_order_relaxed);
@@ -192,6 +217,34 @@ UINT WINAPI hooked_raw_input(HRAWINPUT input,UINT command,LPVOID data,PUINT size
         }
     }
     return result;
+}
+
+void hooked_camera_input(void* camera,bool active){
+    if(originalCameraInputUpdate)originalCameraInputUpdate(camera,active);
+    if(!nativeCameraWheelOpen.load(std::memory_order_acquire) || !camera)return;
+    const auto address=reinterpret_cast<std::uintptr_t>(camera);
+    float pad[4]{},movement[4]{};
+    if(!game::read(address+0x90,pad) || !game::read(address+0xA0,movement))return;
+    float x=pad[1],y=-pad[0];
+    float magnitude=std::hypot(x,y);
+    if(magnitude<0.001f){x=-movement[1];y=movement[0];magnitude=std::hypot(x,y);}
+    const float deadzone=config.controllerDeadzone/100.f;
+    const float threshold=std::clamp(deadzone+(nativeCameraSelected.load(std::memory_order_relaxed)?-.04f:.04f),.01f,.99f);
+    const bool selected=magnitude>=threshold && std::isfinite(magnitude);
+    nativeCameraSelected.store(selected,std::memory_order_relaxed);
+    if(selected){
+        nativeCameraX.store(static_cast<int>(std::clamp(x,-1.f,1.f)*200.f),std::memory_order_relaxed);
+        nativeCameraY.store(static_cast<int>(std::clamp(y,-1.f,1.f)*200.f),std::memory_order_relaxed);
+    }else{
+        nativeCameraX.store(0,std::memory_order_relaxed);
+        nativeCameraY.store(0,std::memory_order_relaxed);
+    }
+    float zero[4]{};
+    SIZE_T written{};
+    WriteProcessMemory(GetCurrentProcess(),reinterpret_cast<void*>(address+0x90),zero,sizeof(zero),&written);
+    WriteProcessMemory(GetCurrentProcess(),reinterpret_cast<void*>(address+0xA0),zero,sizeof(zero),&written);
+    float neutral{};
+    WriteProcessMemory(GetCurrentProcess(),reinterpret_cast<void*>(address+0xB0),&neutral,sizeof(neutral),&written);
 }
 
 // Keep the SEH boundary free of C++ objects that require stack unwinding.
@@ -216,6 +269,35 @@ void diagnostic(void* hud) {
     log("DIAGNOSTIC enabled=%u gameplay=%u hud_state=%u fe_vtable_RVA=%llX hp=%d",
         enabled.load()?1u:0u,game::normal_gameplay(addresses,hud)?1u:0u,static_cast<unsigned>(state),
         static_cast<unsigned long long>(game::pointer(fe)-game::base()),hp);
+    constexpr std::uintptr_t timeRef1=0xDECA6F,timeRef2=0xDED58F;
+    const auto timeGlobal1=game::rip(game::base()+timeRef1);
+    const auto timeGlobal2=game::rip(game::base()+timeRef2);
+    const auto timeManager=timeGlobal1 && timeGlobal1==timeGlobal2 ? game::pointer(timeGlobal1) : 0;
+    float timeScale{};
+    const bool timeReadable=timeManager && game::read(timeManager+0x2CC,timeScale);
+    const auto manager=game::pointer(addresses.gdm);
+    const auto optionData=manager ? game::pointer(manager+0x58) : 0;
+    std::uint8_t offlinePreference=0xFF;
+    if(optionData)game::read(optionData+0x18,offlinePreference);
+    const auto begin=world ? game::pointer(world+0x1F1C8) : 0;
+    const auto end=world ? game::pointer(world+0x1F1D0) : 0;
+    const bool listValid=begin && end>=begin && (end-begin)%sizeof(std::uintptr_t)==0 &&
+        end-begin<=8192*sizeof(std::uintptr_t);
+    const auto localVtable=chr ? game::pointer(chr) : 0;
+    unsigned players=0,localSeen=0,unreadable=0;
+    if(listValid && localVtable){
+        for(auto address=begin;address<end;address+=sizeof(std::uintptr_t)){
+            std::uintptr_t candidate{};
+            if(!game::read(address,candidate)){++unreadable;continue;}
+            if(candidate==chr)++localSeen;
+            else if(candidate && game::pointer(candidate)==localVtable)++players;
+        }
+    }
+    log("TIME_SESSION probe=%u scale=%f offline_preference=%u seamless_loaded=%u world_list_valid=%u world_list_entries=%llu local_seen=%u other_player_types=%u unreadable=%u",
+        timeReadable?1u:0u,timeScale,static_cast<unsigned>(offlinePreference),
+        GetModuleHandleW(L"ersc.dll")?1u:0u,listValid?1u:0u,
+        static_cast<unsigned long long>(listValid?(end-begin)/sizeof(std::uintptr_t):0),
+        localSeen,players,unreadable);
     game::Snapshot snapshot;
     if (!game::snapshot(addresses,snapshot)) { log("Snapshot unavailable: player/inventory/params not ready."); return; }
     log("SNAPSHOT slot1=%u slot2=%u mapping_valid=%u",snapshot.first,snapshot.second,game::current_matches(snapshot)?1u:0u);
@@ -223,6 +305,21 @@ void diagnostic(void* hud) {
         log("ARROW id=%u quantity=%u type=%u%s",arrow.id,arrow.count,arrow.type,arrow.id==snapshot.first?" SLOT1":"");
 }
 
+void play_wheel_sound(bool hover);
+void publish_native_hud_feedback(void* hud){
+    if(!config.nativeHudFeedback || !hudFeedbackAvailable || !game::normal_gameplay(addresses,hud))return;
+    const auto context=reinterpret_cast<std::uintptr_t>(hud);
+    const auto hudState=game::pointer(context);
+    std::uint8_t oldFeedback{},oldVisible{};
+    if(!hudState || !game::read(context+8,oldFeedback) || oldFeedback>2 ||
+       !game::read(hudState+0xAF4,oldVisible) || oldVisible>1)return;
+    const std::uint8_t on=1;
+    SIZE_T written{};
+    if(!WriteProcessMemory(GetCurrentProcess(),reinterpret_cast<void*>(context+8),&on,1,&written) || written!=1)return;
+    written=0;
+    if(!WriteProcessMemory(GetCurrentProcess(),reinterpret_cast<void*>(hudState+0xAF4),&on,1,&written) || written!=1)
+        log("Native HUD feedback: item flash set, visibility request failed.");
+}
 void switch_ammo(AmmoSlot slot,void* hud,std::uint32_t target) {
     game::Snapshot before;
     if (!game::snapshot(addresses,before) || !game::current_matches_slot(before,slot)) {
@@ -266,6 +363,8 @@ void switch_ammo(AmmoSlot slot,void* hud,std::uint32_t target) {
     log("SWITCH OK native_slot=%d id=%u quantity=%u; other ammo slots and equipment indices preserved.",native_slot(slot),candidate.id,candidate.count);
     activeIndicatorSlot=slot;
     refreshIndicator=true;
+    publish_native_hud_feedback(hud);
+    play_wheel_sound(false);
 }
 
 void update_indicator(bool allowed,std::uint64_t now) {
@@ -327,11 +426,12 @@ void play_wheel_sound(bool hover) {
     equipmentSound(&event);
 }
 void publish_wheel_page(const std::vector<indicator::WheelItem>& items,std::size_t page,int selected,AmmoSlot slot){
-    const auto start=page*wheel::pageSize;
-    const auto count=wheel::page_items(items.size(),page);
+    const auto size=wheel::page_size(config.selectionLayout);
+    const auto start=page*size;
+    const auto count=wheel::page_items(items.size(),page,size);
     const std::vector<indicator::WheelItem> visible(items.begin()+start,items.begin()+start+count);
     auto label=std::wstring(slot_label(slot));
-    const auto pages=wheel::page_count(items.size());
+    const auto pages=wheel::page_count(items.size(),size);
     if(pages>1)label+=L"  " + std::to_wstring(page+1) + L"/" + std::to_wstring(pages);
     indicator::publish_wheel(visible,selected,true,label.c_str());
 }
@@ -378,6 +478,8 @@ void reload_customization(std::uint64_t now,bool wheelOpen,std::uint32_t pending
             config.cancelRadius=indicatorSettings.cancelRadius;
             const auto ini=path.wstring();
             config.cycleSameFamily=GetPrivateProfileIntW(L"Switching",L"CycleSameFamily",0,ini.c_str())!=0;
+            config.selectionLayout=std::clamp(GetPrivateProfileIntW(L"Switching",L"SelectionLayout",0,ini.c_str()),0u,3u);
+            indicatorSettings.selectionLayout=config.selectionLayout;
             config.soundEnabled=GetPrivateProfileIntW(L"Audio",L"Enabled",1,ini.c_str())!=0;
             config.hoverSoundCooldown=std::clamp(GetPrivateProfileIntW(L"Audio",L"HoverCooldownMs",90,ini.c_str()),50u,300u);
             const auto bindings=wheel_bindings::load(path);
@@ -420,25 +522,73 @@ void resolve_pending_switch(void* hud,const window_input::State& inputState,bool
 }
 struct WheelState {
     std::array<bool,4> wheelWasDown{},controllerWheelWasDown{};
+    bool controllerRearmRequired=false;
+    std::array<std::uint64_t,4> wheelPressedAt{},controllerPressedAt{};
+    std::array<bool,4> wheelHoldConsumed{},controllerHoldConsumed{};
     std::uint32_t previousPadButtons{};
     bool wheelOpen=false,wheelController=false;
     AmmoSlot wheelSlot=AmmoSlot::arrow1,pendingSlot=AmmoSlot::arrow1;
     std::vector<Arrow> wheelArrows;
     std::vector<indicator::WheelItem> wheelItems;
     float wheelX=0,wheelY=0;
+    list_navigation::Cursor listCursor;
     int wheelSelected=-1;
     std::uint64_t lastHoverSound{};
+    std::uint64_t openedAt{};
+    std::array<std::uint32_t,4> previousAmmo{};
     std::size_t wheelPage=0;
     std::uint32_t pendingWheel=0xFFFFFFFFu;
     std::uint64_t pendingSince{};
 };
-void open_wheel(WheelState& state,int opening,bool openingController){
+struct WheelMetadataKey {
+    std::uintptr_t player{},list{},weaponParam{},effectParam{},names{};
+    std::uint64_t iconSourceRevision{};
+    bool bolt{};
+    std::vector<std::uint64_t> entries;
+    bool operator==(const WheelMetadataKey&) const = default;
+};
+struct WheelMetadataCache {
+    WheelMetadataKey key;
+    std::vector<indicator::WheelItem> items;
+    bool valid=false;
+    std::uint64_t builtAt{};
+};
+WheelMetadataCache wheelMetadataCache;
+WheelMetadataKey metadata_key(const game::Snapshot& snapshot,const std::vector<Arrow>& arrows,
+                              std::uintptr_t effectParam,bool bolt){
+    WheelMetadataKey key{snapshot.player,snapshot.list,snapshot.param,effectParam,namesStatic,
+                         item_icons::revision(),bolt,{}};
+    key.entries.reserve(arrows.size()*3);
+    for(const auto& arrow:arrows){
+        const auto row=game::row(snapshot.param,arrow.id);
+        std::uint16_t icon{};
+        if(row)game::read(row+0xBE,icon);
+        key.entries.push_back((static_cast<std::uint64_t>(arrow.id)<<32)|arrow.type);
+        key.entries.push_back(row);
+        key.entries.push_back(icon);
+    }
+    return key;
+}
+void open_wheel(WheelState& state,int opening,bool openingController,std::uint64_t now){
     if(opening>=0) {
+        LARGE_INTEGER frequency{},openStarted{},afterSnapshot{},afterItems{},finished{};
+        const bool timing=QueryPerformanceFrequency(&frequency) && QueryPerformanceCounter(&openStarted);
+        // A menu save may share the filesystem timestamp of the preceding write.
+        // Read the selected layout on opening so the next press uses it immediately.
+        const auto ini=(folder/L"ArrowQuickSwitch.ini").wstring();
+        const auto savedLayout=std::clamp(GetPrivateProfileIntW(L"Switching",L"SelectionLayout",0,ini.c_str()),0u,3u);
+        if(config.selectionLayout!=savedLayout){
+            config.selectionLayout=savedLayout;
+            indicatorSettings.selectionLayout=savedLayout;
+            indicator::configure(indicatorSettings);
+        }
         state.wheelController=openingController;
         state.wheelSlot=static_cast<AmmoSlot>(opening);
+        state.openedAt=now;
         activeIndicatorSlot=state.wheelSlot;
         game::Snapshot current;
         const bool snap=game::snapshot(addresses,current);
+        if(timing)QueryPerformanceCounter(&afterSnapshot);
         if(snap && game::current_matches_slot(current,state.wheelSlot)) {
             const auto selectedIndex=slot_index(state.wheelSlot);
             const auto* equipped=game::equipped_entry(current,state.wheelSlot);
@@ -449,15 +599,61 @@ void open_wheel(WheelState& state,int opening,bool openingController){
             log("WHEEL %ls: live status-effect parameter %s.",slot_label(state.wheelSlot),effectParam?"found":"unavailable");
             state.wheelArrows=wheel::eligible(current.arrows,current.slotIds[selectedIndex],
                 current.slotIds[slot_index(peer_slot(state.wheelSlot))],state.wheelSlot,config.cycleSameFamily);
-            state.wheelItems=make_wheel_items(current,state.wheelArrows,state.wheelSlot,selectedIndex,effectParam);
+            auto key=metadata_key(current,state.wheelArrows,effectParam,selectedIndex>=2);
+            if(wheelMetadataCache.valid && now-wheelMetadataCache.builtAt<5000 && wheelMetadataCache.key==key){
+                state.wheelItems=wheelMetadataCache.items;
+                for(std::size_t i=0;i<state.wheelItems.size();++i)
+                    state.wheelItems[i].count=state.wheelArrows[i].count;
+            }else{
+                state.wheelItems=make_wheel_items(current,state.wheelArrows,state.wheelSlot,selectedIndex,effectParam);
+                wheelMetadataCache.key=std::move(key);
+                wheelMetadataCache.items=state.wheelItems;
+                wheelMetadataCache.valid=true;
+                wheelMetadataCache.builtAt=now;
+            }
+            if(timing)QueryPerformanceCounter(&afterItems);
             state.wheelOpen=!state.wheelItems.empty();state.wheelX=state.wheelY=0;state.wheelSelected=-1;state.wheelPage=0;
+            state.listCursor.open();
+            if(config.selectionLayout!=0){
+                const auto at=std::find_if(state.wheelArrows.begin(),state.wheelArrows.end(),
+                    [&](const Arrow& arrow){return arrow.id==current.slotIds[selectedIndex];});
+                if(at!=state.wheelArrows.end()){
+                    const auto index=static_cast<int>(at-state.wheelArrows.begin());
+                    state.listCursor.open(index);
+                    const auto size=wheel::page_size(config.selectionLayout);
+                    state.wheelPage=static_cast<std::size_t>(index)/size;
+                    state.wheelSelected=index%static_cast<int>(size);
+                }
+            }
             rawDx.store(0);rawDy.store(0);rawPageSteps.store(0);rawWheelOpen.store(state.wheelOpen&&!state.wheelController);
+            rawCameraBlock.store(state.wheelOpen && !state.wheelController && config.selectionLayout==0 &&
+                                 indicatorSettings.blockCameraWhileSelecting,
+                                 std::memory_order_release);
+            nativeCameraX.store(0);nativeCameraY.store(0);
+            nativeCameraSelected.store(false);
+            nativeCameraWheelOpen.store(state.wheelOpen && config.selectionLayout==0 &&
+                                        !state.wheelController && config.nativeCameraSelection,
+                                        std::memory_order_release);
             if(state.wheelOpen) {
                 publish_wheel_page(state.wheelItems,state.wheelPage,state.wheelSelected,state.wheelSlot);
                 play_wheel_sound(false);
-            }
-            else log("WHEEL %ls: no eligible owned ammo (current=%u peer=%u).",slot_label(state.wheelSlot),
+            }else log("WHEEL %ls: no eligible owned ammo (current=%u peer=%u).",slot_label(state.wheelSlot),
                 current.slotIds[selectedIndex],current.slotIds[slot_index(peer_slot(state.wheelSlot))]);
+            if(timing){
+                QueryPerformanceCounter(&finished);
+                const auto us=[&](LONGLONG ticks){return static_cast<unsigned long long>(ticks*1000000/frequency.QuadPart);};
+                const auto total=us(finished.QuadPart-openStarted.QuadPart);
+                if(total>=16000){
+                    static std::uint64_t lastSlowLog{};
+                    if(now-lastSlowLog>=2000){
+                        lastSlowLog=now;
+                        log("WHEEL timing slot=%ls total=%lluus setup_snapshot=%lluus items=%lluus publish=%lluus count=%zu.",
+                            slot_label(state.wheelSlot),total,us(afterSnapshot.QuadPart-openStarted.QuadPart),
+                            us(afterItems.QuadPart-afterSnapshot.QuadPart),us(finished.QuadPart-afterItems.QuadPart),
+                            state.wheelItems.size());
+                    }
+                }
+            }
         } else if(!snap) {
             log("WHEEL %ls: inventory snapshot unavailable.",slot_label(state.wheelSlot));
         } else {
@@ -483,6 +679,14 @@ void open_wheel(WheelState& state,int opening,bool openingController){
         }
     }
 }
+void select_wheel_item(WheelState& state,std::size_t page,int selected,std::uint64_t now){
+    if(page==state.wheelPage && selected==state.wheelSelected)return;
+    if(selected>=0 && now-state.lastHoverSound>=config.hoverSoundCooldown){
+        play_wheel_sound(true);state.lastHoverSound=now;
+    }
+    state.wheelPage=page;state.wheelSelected=selected;
+    publish_wheel_page(state.wheelItems,page,selected,state.wheelSlot);
+}
 void interact_with_wheel(WheelState& state,bool activeWheelDown,bool gameplay,bool focused,
     std::uint32_t padButtons,const XINPUT_STATE& padState,std::uint64_t now){
     if(state.wheelOpen && activeWheelDown && gameplay && focused) {
@@ -494,47 +698,76 @@ void interact_with_wheel(WheelState& state,bool activeWheelDown,bool gameplay,bo
             if(controller::down(config.controllerPreviousPage,padButtons) &&
                !controller::down(config.controllerPreviousPage,state.previousPadButtons))--steps;
         }
-        bool pageChanged=false;
+        if(config.selectionLayout!=0){
+            // Mouse wheel down advances; controller next/previous bindings step items.
+            rawDx.exchange(0);rawDy.exchange(0);
+            state.listCursor.move(state.wheelController?steps:-steps,state.wheelItems.size());
+            if(state.listCursor.index>=0){
+                const auto index=static_cast<std::size_t>(state.listCursor.index);
+                const auto size=wheel::page_size(config.selectionLayout);
+                select_wheel_item(state,index/size,static_cast<int>(index%size),now);
+            }
+            return;
+        }
+        auto page=state.wheelPage;
         const auto pages=wheel::page_count(state.wheelItems.size());
         if(steps && pages>1){
-            state.wheelPage=wheel::turn_page(state.wheelPage,pages,steps);
-            pageChanged=true;
+            page=wheel::turn_page(page,pages,steps);
         }
         if(state.wheelController){
             controller::right_stick(padState.Gamepad,config.controllerDeadzone,state.wheelX,state.wheelY);
         }else{
-            state.wheelX=std::clamp(state.wheelX+static_cast<float>(rawDx.exchange(0))*1.1f,-240.f,240.f);
-            state.wheelY=std::clamp(state.wheelY+static_cast<float>(rawDy.exchange(0))*1.1f,-240.f,240.f);
+            const int nativeX=nativeCameraX.exchange(0),nativeY=nativeCameraY.exchange(0);
+            constexpr float sensitivity=1.1f;
+            state.wheelX=std::clamp(state.wheelX+static_cast<float>(rawDx.exchange(0))*sensitivity,-240.f,240.f);
+            state.wheelY=std::clamp(state.wheelY+static_cast<float>(rawDy.exchange(0))*sensitivity,-240.f,240.f);
+            if(nativeX || nativeY){state.wheelX=static_cast<float>(nativeX);state.wheelY=static_cast<float>(nativeY);}
             // Some input setups do not use GetRawInputData. Use the actual cursor then.
             if(!originalRawInputData){
                 POINT cursor{};RECT client{};auto window=GetForegroundWindow();
                 if(GetCursorPos(&cursor) && ScreenToClient(window,&cursor) && GetClientRect(window,&client)) {
-                    state.wheelX=static_cast<float>(cursor.x-(client.right-client.left)/2);
-                    state.wheelY=static_cast<float>(cursor.y-(client.bottom-client.top)/2);
+                    state.wheelX=static_cast<float>(cursor.x-(client.right-client.left)/2)*sensitivity;
+                    state.wheelY=static_cast<float>(cursor.y-(client.bottom-client.top)/2)*sensitivity;
                 }
             }
         }
-        const auto selected=wheel::selection(state.wheelX,state.wheelY,wheel::page_items(state.wheelItems.size(),state.wheelPage),
-                                             static_cast<float>(config.cancelRadius));
-        if(pageChanged || selected!=state.wheelSelected){
-            if(selected>=0 && now-state.lastHoverSound>=config.hoverSoundCooldown){
-                play_wheel_sound(true);state.lastHoverSound=now;
-            }
-            state.wheelSelected=selected;publish_wheel_page(state.wheelItems,state.wheelPage,state.wheelSelected,state.wheelSlot);
-        }
+        const auto selected=wheel::selection(state.wheelX,state.wheelY,wheel::page_items(state.wheelItems.size(),page),
+            static_cast<float>(config.cancelRadius));
+        select_wheel_item(state,page,selected,now);
     }
 }
 void release_wheel(WheelState& state,bool activeWheelDown,bool gameplay,bool focused,
     bool padConnected,std::uint64_t now){
     if(state.wheelOpen && (!activeWheelDown || !gameplay || !focused)) {
+        rawCameraBlock.store(false,std::memory_order_release);
+        nativeCameraWheelOpen.store(false,std::memory_order_release);
+        nativeCameraSelected.store(false);
         rawWheelOpen.store(false);rawDx.store(0);rawDy.store(0);rawPageSteps.store(0);
         indicator::publish_wheel({},-1,false,slot_label(state.wheelSlot));
-        const auto selectedIndex=state.wheelPage*wheel::pageSize+static_cast<std::size_t>(std::max(state.wheelSelected,0));
-        if(gameplay && focused && (!state.wheelController || padConnected) && state.wheelSelected>=0 && selectedIndex<state.wheelArrows.size()){
-            state.pendingWheel=state.wheelArrows[selectedIndex].id;state.pendingSlot=state.wheelSlot;state.pendingSince=now;
+        if(gameplay && focused && (!state.wheelController || padConnected)){
+            const auto target=wheel::release_target(config.selectionLayout,config.tapHoldCycle,
+                now-state.openedAt,state.listCursor.navigated,state.wheelSelected,state.wheelPage,
+                state.wheelArrows,state.previousAmmo[slot_index(state.wheelSlot)]);
+            if(target!=0xFFFFFFFFu){
+                game::Snapshot snapshot;
+                if(game::snapshot(addresses,snapshot))state.previousAmmo[slot_index(state.wheelSlot)]=snapshot.slotIds[slot_index(state.wheelSlot)];
+                state.pendingWheel=target;state.pendingSlot=state.wheelSlot;state.pendingSince=now;
+            }
         }
         state.wheelOpen=false;state.wheelController=false;state.wheelArrows.clear();state.wheelItems.clear();state.wheelSelected=-1;
     }
+}
+void schedule_tap_cycle(WheelState& state,AmmoSlot slot,std::uint64_t now){
+    game::Snapshot snapshot;
+    if(!game::snapshot(addresses,snapshot) || !game::current_matches_slot(snapshot,slot))return;
+    const auto index=slot_index(slot);
+    const auto options=wheel::eligible(snapshot.arrows,snapshot.slotIds[index],
+        snapshot.slotIds[slot_index(peer_slot(slot))],slot,config.cycleSameFamily);
+    const auto target=wheel::next_eligible_id(options,snapshot.slotIds[index]);
+    if(target==0xFFFFFFFFu)return;
+    state.pendingWheel=target;
+    state.pendingSlot=slot;
+    state.pendingSince=now;
 }
 void update(void* hud) {
     static bool first=true;
@@ -569,7 +802,7 @@ void update(void* hud) {
     const bool settingsPressed=(keyboardSettingsPressed || controllerSettingsPressed) && gameplay && !settings_ui::is_capturing();
     if(settingsPressed){
         settings_ui::toggle();
-        if(state.wheelOpen){state.wheelOpen=false;rawWheelOpen.store(false);indicator::publish_wheel({},-1,false);}
+        if(state.wheelOpen){state.wheelOpen=false;rawCameraBlock.store(false);rawWheelOpen.store(false);nativeCameraWheelOpen.store(false);nativeCameraSelected.store(false);indicator::publish_wheel({},-1,false);}
         state.pendingWheel=0xFFFFFFFFu;
     }
     if(!focused || !gameplay)settings_ui::close();
@@ -578,16 +811,60 @@ void update(void* hud) {
     for(std::size_t i=0;i<4;++i)wheelDown[i]=key_down(wheelBindings[i].key) && input::matches(wheelBindings[i],modifiers);
     std::array<bool,4> controllerWheelDown{};
     for(std::size_t i=0;i<4;++i)controllerWheelDown[i]=controller::down(config.controllerWheels[i],padButtons);
+    if(!padConnected)state.controllerRearmRequired=true;
+    if(state.controllerRearmRequired){
+        if(padConnected && padButtons==0)state.controllerRearmRequired=false;
+        else controllerWheelDown.fill(false);
+    }
+    if(config.tapHoldCycle){
+        for(std::size_t i=0;i<4;++i){
+            if(wheelDown[i] && !state.wheelWasDown[i]){
+                state.wheelPressedAt[i]=gameplay && !settings_ui::is_open()?now:0;
+                state.wheelHoldConsumed[i]=state.wheelPressedAt[i]==0;
+            }
+            if(controllerWheelDown[i] && !state.controllerWheelWasDown[i]){
+                state.controllerPressedAt[i]=gameplay && !settings_ui::is_open()?now:0;
+                state.controllerHoldConsumed[i]=state.controllerPressedAt[i]==0;
+            }
+            if(!gameplay || !focused || settings_ui::is_open()){
+                state.wheelHoldConsumed[i]=true;
+                state.controllerHoldConsumed[i]=true;
+            }
+            if(!wheelDown[i] && state.wheelWasDown[i]){
+                if(!state.wheelHoldConsumed[i] && state.wheelPressedAt[i] &&
+                   now-state.wheelPressedAt[i]<config.tapHoldThreshold && gameplay &&
+                   !settings_ui::is_open() && enabled.load() && indicatorSettings.enabled)
+                    schedule_tap_cycle(state,static_cast<AmmoSlot>(i),now);
+                state.wheelPressedAt[i]=0;state.wheelHoldConsumed[i]=false;
+            }
+            if(!controllerWheelDown[i] && state.controllerWheelWasDown[i]){
+                if(!state.controllerHoldConsumed[i] && state.controllerPressedAt[i] &&
+                   now-state.controllerPressedAt[i]<config.tapHoldThreshold && gameplay && padConnected &&
+                   !settings_ui::is_open() && enabled.load() && indicatorSettings.enabled)
+                    schedule_tap_cycle(state,static_cast<AmmoSlot>(i),now);
+                state.controllerPressedAt[i]=0;state.controllerHoldConsumed[i]=false;
+            }
+        }
+    }
     int opening=-1;
     bool openingController=false;
     if(!settingsPressed && !state.wheelOpen && !settings_ui::is_open() && gameplay && enabled.load() && indicatorSettings.enabled)
         for(std::size_t i=0;i<4;++i){
-            if(wheelDown[i]&&!state.wheelWasDown[i]){opening=static_cast<int>(i);break;}
-            if(controllerWheelDown[i]&&!state.controllerWheelWasDown[i]){
+            const bool keyboardOpen=config.tapHoldCycle
+                ? wheelDown[i] && state.wheelPressedAt[i] && !state.wheelHoldConsumed[i] &&
+                  now-state.wheelPressedAt[i]>=config.tapHoldThreshold
+                : wheelDown[i]&&!state.wheelWasDown[i];
+            const bool controllerOpen=config.tapHoldCycle
+                ? controllerWheelDown[i] && state.controllerPressedAt[i] && !state.controllerHoldConsumed[i] &&
+                  now-state.controllerPressedAt[i]>=config.tapHoldThreshold
+                : controllerWheelDown[i]&&!state.controllerWheelWasDown[i];
+            if(keyboardOpen){opening=static_cast<int>(i);state.wheelHoldConsumed[i]=true;break;}
+            if(controllerOpen){
                 opening=static_cast<int>(i);openingController=true;break;
             }
         }
-    open_wheel(state,opening,openingController);
+    if(openingController && opening>=0)state.controllerHoldConsumed[static_cast<std::size_t>(opening)]=true;
+    open_wheel(state,opening,openingController,now);
     const bool activeWheelDown=state.wheelController?controllerWheelDown[slot_index(state.wheelSlot)]:wheelDown[slot_index(state.wheelSlot)];
     interact_with_wheel(state,activeWheelDown,gameplay,focused,padButtons,padState,now);
     release_wheel(state,activeWheelDown,gameplay,focused,padConnected,now);
@@ -604,14 +881,14 @@ void hooked_hud(void* hud,float arg2,void* arg3) {
     originalHud(hud,arg2,arg3);
     if (!hud || updating.test_and_set()) return;
     try { update(hud); }
-    catch (...) { enabled.store(false); log("SWITCH DISABLED: unexpected error in equipment update."); }
+    catch (...) { rawCameraBlock.store(false);rawWheelOpen.store(false);enabled.store(false); log("SWITCH DISABLED: unexpected error in equipment update."); }
     updating.clear();
 }
 
 DWORD WINAPI initialize(void*) {
     wchar_t path[32768]{}; GetModuleFileNameW(module,path,32768);
     folder=std::filesystem::path(path).parent_path();
-    log("ArrowQuickSwitch 0.6.3: Elden Ring 1.17.2 compatibility update.");
+    log("ArrowQuickSwitch 0.7.0: Elden Ring 1.17.2.");
     if (!supported_version()) { log("Disabled: unsupported executable version (requires file 2.7.2.0 / game 1.17.2)."); return 0; }
     wchar_t executable[32768]{};
     if(GetModuleFileNameW(nullptr,executable,32768))item_icons::initialize(std::filesystem::path(executable).parent_path(),log);
@@ -633,6 +910,10 @@ DWORD WINAPI initialize(void*) {
         if(!xinputGetState)log("Controller input unavailable; keyboard wheels remain active.");
     }
     if (!addresses.resolve()) { log("Disabled: missing, ambiguous, or modified game signatures. No hook installed."); return 0; }
+    hudFeedbackAvailable=game::equal(game::base()+0x776A02,{0x66,0x89,0x59,0x08}) &&
+        game::equal(game::base()+0x776D32,{0xC6,0x47,0x08,0x02}) &&
+        game::equal(game::base()+0x776D47,{0xC6,0x80,0xF4,0x0A,0x00,0x00,0x01});
+    if(config.nativeHudFeedback)log("Experimental native HUD feedback: %s.",hudFeedbackAvailable?"signature matched":"signature mismatch, disabled");
     {
         constexpr std::uintptr_t soundRva=0x816200, callSiteRva=0x776DEA, cueRva=0x2AA2D40;
         const auto soundAddress=game::base()+soundRva;
@@ -665,6 +946,19 @@ DWORD WINAPI initialize(void*) {
             else{MH_RemoveHook(target);originalRawInputData=nullptr;log("Raw mouse hook unavailable: queue failed.");}
         }else log("Raw mouse hook unavailable: creation failed (%d).",created);
     }
+    void* cameraTarget=nullptr;
+    if(config.nativeCameraSelection){
+        const auto target=reinterpret_cast<void*>(game::base()+0x3B1F60);
+        if(game::equal(reinterpret_cast<std::uintptr_t>(target),
+            {0x48,0x8B,0xC4,0x55,0x48,0x8D,0x68,0xA1,0x48,0x81,0xEC,0xA0,0,0,0})){
+            const auto created=MH_CreateHook(target,reinterpret_cast<void*>(&hooked_camera_input),
+                                              reinterpret_cast<void**>(&originalCameraInputUpdate));
+            if(created==MH_OK){
+                if(MH_QueueEnableHook(target)==MH_OK)cameraTarget=target;
+                else{MH_RemoveHook(target);originalCameraInputUpdate=nullptr;log("Native camera selection unavailable: queue failed.");}
+            }else log("Native camera selection unavailable: hook creation failed (%d).",created);
+        }else log("Native camera selection unavailable: game signature mismatch.");
+    }
     status=MH_ApplyQueued();
     if(status!=MH_OK){
         // Applying a batch can fail after some patches were installed. Disable
@@ -672,6 +966,7 @@ DWORD WINAPI initialize(void*) {
         // about to call its original trampoline even after its target is restored.
         MH_QueueDisableHook(hudTarget);
         if(rawTarget)MH_QueueDisableHook(rawTarget);
+        if(cameraTarget)MH_QueueDisableHook(cameraTarget);
         const auto rollback=MH_ApplyQueued();
         enabled.store(false);
         log("Disabled: core hook activation failed (%d), rollback=%d. Trampolines retained for callback safety.",status,rollback);
